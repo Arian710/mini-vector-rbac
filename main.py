@@ -2,15 +2,27 @@
 Demo: dieselbe Suchanfrage, gestellt von zwei Usern mit unterschiedlichen Rollen.
 Zeigt, dass der Rollenfilter in db.py wirklich unterschiedliche Ergebnisse liefert -
 nicht nur unterschiedlich angezeigte, sondern unterschiedlich ZURUECKGEGEBENE Daten.
+
+Nutzt automatisch echte Azure-Embeddings, falls in .env konfiguriert, sonst den
+kostenlosen Platzhalter-Embedder (siehe embeddings.py).
 """
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 from data import TICKETS
 from db import MiniVectorDB
 from auth import get_role
+from embeddings import get_default_embedder
 
 
 def build_database() -> MiniVectorDB:
-    db = MiniVectorDB()
+    embedder = get_default_embedder()
+    print(f"Verwende Embedder: {type(embedder).__name__}")
+    db = MiniVectorDB(embedder=embedder)
     for ticket in TICKETS:
         db.add(ticket["id"], ticket["text"], ticket["allowed_roles"])
     return db

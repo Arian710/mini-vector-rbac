@@ -1,67 +1,20 @@
 """
 MiniVectorDB - eine winzige Vektordatenbank mit serverseitigem Rollenfilter.
 
-Diese Datei setzt die 5 Konzepte aus unserem Dialog in Code um:
-  Konzept 1: Vektor       -> Zahlenlisten (numpy-Arrays), die Punkte im Raum sind
-  Konzept 2: Embedding    -> text_to_vector() uebersetzt Text in so einen Punkt
+Diese Datei setzt 4 der 5 Konzepte aus unserem Dialog in Code um (das
+Embedding selbst - Konzept 2 - steckt in embeddings.py und wird hier nur ueber
+das Embedder-Interface benutzt, damit MiniVectorDB nicht wissen muss, ob im
+Hintergrund ein Platzhalter oder Azure OpenAI laeuft):
+
   Konzept 3: Cosine Sim.  -> cosine_similarity() misst den Winkel zwischen zwei Vektoren
-  Konzept 4: Brute-Force  -> search() vergleicht die Query stur mit JEDEM Eintrag
+  Konzept 4: Brute-Force  -> search() vergleicht die Query stur mit JEDEM erlaubten Eintrag
   Konzept 5: RBAC         -> der Rollenfilter sitzt INNERHALB von search(), nicht
                               irgendwo "danach" beim Aufrufer
 """
 
-import hashlib
-import re
-
 import numpy as np
 
-VECTOR_DIM = 64
-
-# Sehr haeufige deutsche Woerter, die in praktisch jedem Satz vorkommen und daher
-# keine thematische Unterscheidungskraft haben - wir ignorieren sie, damit die
-# inhaltlich wichtigen Woerter (z.B. "Gehalt", "Drucker") staerker ins Gewicht fallen.
-STOPWORDS = {
-    "der", "die", "das", "und", "ist", "im", "in", "zu", "auf", "fuer",
-    "mit", "von", "wird", "wurde", "ein", "eine", "einen", "einem",
-    "nicht", "mehr", "noch", "sich", "bei", "um", "als", "an", "aus",
-    "dem", "des", "den", "sind", "hat", "haben", "werden", "ueber",
-    "seit", "heute",
-}
-
-_WORD_RE = re.compile(r"[a-zäöüß]+")
-
-
-def _tokenize(text: str) -> list:
-    words = _WORD_RE.findall(text.lower())
-    return [w for w in words if w not in STOPWORDS and len(w) > 2]
-
-
-def _hash_index(word: str, dim: int) -> int:
-    # md5 statt Pythons eingebautem hash(), weil hash() fuer Strings pro Prozess
-    # randomisiert ist - wir brauchen aber ein Ergebnis, das bei jedem Lauf gleich
-    # ist, sonst waeren unsere Vektoren nicht reproduzierbar.
-    digest = hashlib.md5(word.encode("utf-8")).hexdigest()
-    return int(digest, 16) % dim
-
-
-def text_to_vector(text: str, dim: int = VECTOR_DIM) -> np.ndarray:
-    """
-    Vereinfachtes Platzhalter-Embedding (Konzept 2).
-
-    WICHTIG: Das hier ist bewusst KEIN trainiertes Modell, sondern ein simpler
-    "Hashing-Trick": jedes Wort wird per Hash-Funktion einer festen Position im
-    Vektor zugeordnet, und wir zaehlen, wie oft jedes Wort vorkommt. Das erkennt
-    also nur Wortueberlappung, keine Synonyme oder echte Bedeutung (anders als ein
-    echtes Embedding-Modell aus Konzept 2).
-
-    Fuer eine echte Anwendung wuerde man diese Funktion durch einen API-Aufruf an
-    ein trainiertes Embedding-Modell ersetzen - der Rest der Datenbank (Cosine
-    Similarity, Suche, Rollenfilter) bliebe dabei komplett unveraendert.
-    """
-    vector = np.zeros(dim)
-    for word in _tokenize(text):
-        vector[_hash_index(word, dim)] += 1.0
-    return vector
+from embeddings import Embedder, HashingEmbedder
 
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
@@ -69,7 +22,7 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     Cosine Similarity (Konzept 3): (a . b) / (|a| * |b|)
 
     Ergebnis liegt zwischen -1 (genau entgegengesetzte Richtung) und 1
-    (exakt gleiche Richtung). Miss den Winkel zwischen zwei Vektoren,
+    (exakt gleiche Richtung). Misst den Winkel zwischen zwei Vektoren,
     ignoriert dabei bewusst deren Laenge.
     """
     norm_a = np.linalg.norm(a)
@@ -82,18 +35,23 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
 class MiniVectorDB:
     """Eine minimale Vektordatenbank mit eingebautem, serverseitigem Rollenfilter."""
 
-    def __init__(self):
+    def __init__(self, embedder: Embedder = None):
+        # Ein Embedder wird injiziert statt fest verdrahtet - so kann main.py
+        # echte Azure-Embeddings nutzen, waehrend test_rbac.py bewusst den
+        # kostenlosen HashingEmbedder erzwingt (offline, deterministisch).
+        self._embedder = embedder or HashingEmbedder()
         self._entries = []  # jeder Eintrag: {"id", "text", "vector", "allowed_roles"}
 
     def add(self, ticket_id, text: str, allowed_roles: list) -> None:
         """
         Fuegt ein Dokument zur Datenbank hinzu.
 
-        Konzept 2 (Embedding): der Text wird hier in einen Vektor uebersetzt und
-        zusammen mit den erlaubten Rollen gespeichert. allowed_roles=["all"]
-        bedeutet: jede Rolle darf dieses Dokument sehen.
+        Konzept 2 (Embedding): der Text wird hier ueber den injizierten Embedder
+        in einen Vektor uebersetzt und zusammen mit den erlaubten Rollen
+        gespeichert. allowed_roles=["all"] bedeutet: jede Rolle darf dieses
+        Dokument sehen.
         """
-        vector = text_to_vector(text)
+        vector = self._embedder.embed(text)
         self._entries.append({
             "id": ticket_id,
             "text": text,
@@ -111,14 +69,16 @@ class MiniVectorDB:
         das diese Rolle nicht sehen darf, verlaesst diese Methode nie - egal wie
         gut es inhaltlich passen wuerde. Es gibt keinen Aufrufer-Code, der diesen
         Filter vergessen oder umgehen koennte, weil er nicht "aussen", sondern
-        hier drin sitzt.
+        hier drin sitzt. WICHTIG: `role` muss von einer vertrauenswuerdigen,
+        serverseitigen Quelle kommen (siehe auth.py / api.py) - niemals direkt
+        vom Client uebernommen werden.
 
         Konzept 4 (Brute-Force): auf der erlaubten Teilmenge wird wirklich JEDER
         Eintrag durchgerechnet - kein Index, keine Abkuerzung.
 
         Konzept 3 (Cosine Similarity): der Aehnlichkeitswert pro Eintrag.
         """
-        query_vector = text_to_vector(query)
+        query_vector = self._embedder.embed(query)
 
         # RBAC-Filter zuerst - nicht als nachtraeglicher Schritt.
         allowed_entries = [

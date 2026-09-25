@@ -4,17 +4,22 @@ greift - insbesondere auch dann, wenn ein sensibles Ticket inhaltlich der beste
 Treffer waere (test_best_match_hidden_from_unauthorized_role).
 
 Kein Testframework noetig: einfach `python test_rbac.py` ausfuehren.
+
+Nutzt bewusst IMMER den HashingEmbedder statt Azure - Tests sollen offline,
+kostenlos und deterministisch laufen, egal ob eine .env mit Azure-Zugangsdaten
+existiert oder nicht.
 """
 
 from data import TICKETS
 from db import MiniVectorDB
+from embeddings import HashingEmbedder
 
 MANAGEMENT_ONLY_IDS = {8, 9, 10, 11}
 ALL_VISIBLE_IDS = {1, 2, 3, 4, 5, 6, 7}
 
 
 def build_database() -> MiniVectorDB:
-    db = MiniVectorDB()
+    db = MiniVectorDB(embedder=HashingEmbedder())
     for ticket in TICKETS:
         db.add(ticket["id"], ticket["text"], ticket["allowed_roles"])
     return db

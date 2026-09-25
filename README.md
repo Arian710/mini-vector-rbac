@@ -2,31 +2,47 @@
 
 Eine minimale Vektordatenbank für KMU-Support-Tickets, bei der die Rollenprüfung
 (RBAC) fest in die Such-Engine eingebaut ist statt nachträglich in der
-Oberfläche. Dient als Lern- und Demo-Grundlage für ein späteres Business rund
-um durchgängig sichere Vektorsuche.
+Oberfläche oder im API-Aufrufer. Entstanden als Lernprojekt, um Vektoren,
+Embeddings, Cosine Similarity und serverseitiges RBAC von Grund auf sauber zu
+verstehen und sichtbar zu machen.
 
 ## Setup & Ausführen
 
 ```bash
 pip install -r requirements.txt
+
 python main.py          # Demo: gleiche Suche, zwei Rollen, unterschiedliche Ergebnisse
 python test_rbac.py     # 5 Tests, die die Rollentrennung beweisen
+
+uvicorn api:app --reload   # Web-API starten, Swagger-UI unter /docs
 ```
+
+**Echte Embeddings statt Platzhalter:** `.env.example` nach `.env` kopieren und
+mit einer eigenen Azure-OpenAI-Ressource befüllen (Endpoint, Key,
+Deployment-Name eines Embedding-Modells wie `text-embedding-3-small`). Ohne
+`.env` läuft alles automatisch mit dem kostenlosen `HashingEmbedder` weiter.
 
 ## Projektstruktur
 
 - `data.py` – Beispiel-Tickets, gemischt aus allgemeinen (`allowed_roles=["all"]`)
   und sensiblen Finanz-/HR-Tickets (`allowed_roles=["management"]`)
 - `auth.py` – simulierte User→Rolle-Zuordnung (kein echtes Login)
-- `db.py` – `MiniVectorDB` mit `add()` und `search()`, inkl. Embedding,
-  Cosine Similarity, Brute-Force-Suche und Rollenfilter
-- `main.py` – Demo: dieselbe Anfrage von zwei Usern mit unterschiedlichen Rollen
+- `embeddings.py` – Embedder-Abstraktion: `HashingEmbedder` (kostenloser,
+  deterministischer Platzhalter) und `AzureOpenAIEmbedder` (echtes, trainiertes
+  Modell über die Azure-OpenAI-API); `get_default_embedder()` wählt automatisch
+- `db.py` – `MiniVectorDB` mit `add()` und `search()`, inkl. Cosine Similarity,
+  Brute-Force-Suche und Rollenfilter; bekommt den Embedder als Abhängigkeit
+  injiziert statt ihn selbst festzulegen
+- `main.py` – CLI-Demo: dieselbe Anfrage von zwei Usern mit unterschiedlichen Rollen
+- `api.py` – FastAPI-Web-API um `MiniVectorDB`; die Rolle wird ausschließlich
+  serverseitig aus dem `username` aufgelöst, nie direkt vom Client übernommen
 - `test_rbac.py` – Tests, die beweisen, dass unautorisierte Nutzer sensible
-  Tickets nie sehen, auch wenn sie der beste inhaltliche Treffer wären
+  Tickets nie sehen, auch wenn sie der beste inhaltliche Treffer wären; nutzt
+  bewusst immer den `HashingEmbedder`, damit Tests offline und kostenlos laufen
 
-**Nicht Teil dieses Schritts:** Azure-Anbindung, echtes JWT/Login, Web-API. Das
-Platzhalter-Embedding in `db.py` (Wortüberlappung statt trainiertem Modell) ist
-bewusst austauschbar gehalten für einen späteren Schritt mit echtem Modell.
+**Nicht Teil dieses Projekts:** echtes JWT/Login (User→Rolle bleibt ein
+simuliertes Dictionary in `auth.py`), Persistenz über einen Prozessneustart
+hinaus, Multi-Tenancy.
 
 ## Die 5 Konzepte dahinter
 
