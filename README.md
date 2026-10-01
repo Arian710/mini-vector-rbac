@@ -13,16 +13,19 @@ pip install -r requirements.txt
 
 python seed_data.py     # einmalig: Datenbank mit Beispieldaten + Demo-Usern befüllen
 
-python main.py          # Demo: gleiche Suche, zwei Rollen, unterschiedliche Ergebnisse
-python test_rbac.py     # Tests: Rollentrennung auf Engine-Ebene (db.py)
+python main.py          # Demo: gleiche Suche, zwei Rollen, zwei Mandanten
+python test_rbac.py     # Tests: Rollen- UND Tenant-Trennung auf Engine-Ebene (db.py)
 python test_auth.py     # Tests: Passwort-Hashing, JWT-Erzeugung/-Prüfung
 python test_audit.py    # Tests: Audit-Log + Autorisierung auf API-Ebene
+python test_tenancy.py  # Tests: Mandantentrennung auf echter API-Ebene
 
 uvicorn api:app --reload   # Web-API starten, Swagger-UI unter /docs
 ```
 
-Demo-Login (aus `seed_data.py`): `anna`/`carla` (Rolle `support`), `bernd`/`david`
-(Rolle `management`), Passwort für alle `demo1234` — nur fürs lokale Ausprobieren.
+Demo-Login (aus `seed_data.py`), zwei Mandanten mit je einem `support`- und
+einem `management`-User: `anna`/`bernd` gehören zu `kanzlei-mueller`,
+`carla`/`david` zu `steuerberatung-schmidt`. Passwort für alle `demo1234` —
+nur fürs lokale Ausprobieren.
 
 **Echte Embeddings statt Platzhalter:** `.env.example` nach `.env` kopieren und
 mit einer eigenen Azure-OpenAI-Ressource befüllen (Endpoint, Key,
@@ -32,37 +35,42 @@ kostenlosen `HashingEmbedder` weiter.
 
 ## Projektstruktur
 
-- `data.py` – Beispiel-Tickets, gemischt aus allgemeinen (`allowed_roles=["all"]`)
+- `data.py` – Beispiel-Tickets für **zwei Mandanten** (`kanzlei-mueller`,
+  `steuerberatung-schmidt`), je gemischt aus allgemeinen (`allowed_roles=["all"]`)
   und sensiblen Finanz-/HR-Tickets (`allowed_roles=["management"]`)
 - `auth.py` – echtes Login: bcrypt-Passwort-Hashing, JWT-Erzeugung und -Prüfung
-- `storage.py` – SQLite-Persistenz (Tickets inkl. Vektor, User, Such-Protokoll);
-  komplett getrennt von der Suchlogik in `db.py`
+  (Token enthält Username, Rolle UND `tenant_id`)
+- `storage.py` – SQLite-Persistenz (Tickets inkl. Vektor und Tenant, User inkl.
+  Tenant, Such-Protokoll inkl. Tenant); komplett getrennt von der Suchlogik in `db.py`
 - `embeddings.py` – Embedder-Abstraktion: `HashingEmbedder` (kostenloser,
   deterministischer Platzhalter) und `AzureOpenAIEmbedder` (echtes, trainiertes
   Modell über die Azure-OpenAI-API); `get_default_embedder()` wählt automatisch
 - `db.py` – `MiniVectorDB` mit `add()`/`load_entry()` und `search()`, inkl.
-  Cosine Similarity, Brute-Force-Suche und Rollenfilter; bekommt den Embedder
-  als Abhängigkeit injiziert statt ihn selbst festzulegen
-- `main.py` – CLI-Demo: lädt aus SQLite, zeigt dieselbe Anfrage für zwei Rollen
+  Cosine Similarity, Brute-Force-Suche, Tenant-Filter und Rollenfilter (in
+  dieser Reihenfolge); bekommt den Embedder als Abhängigkeit injiziert statt
+  ihn selbst festzulegen
+- `main.py` – CLI-Demo: gleiche Anfrage über zwei Rollen UND zwei Mandanten
 - `api.py` – FastAPI-Web-API: `/login` gibt ein JWT aus, `/search` verlangt es
-  im `Authorization`-Header, `/audit-log` zusätzlich nur für Rolle `management`.
-  Username und Rolle kommen ausschließlich aus dem geprüften Token, nie aus dem
-  Request-Body
+  im `Authorization`-Header, `/audit-log` zusätzlich nur für Rolle `management`
+  (und nur das Protokoll des eigenen Mandanten). Username, Rolle und Tenant
+  kommen ausschließlich aus dem geprüften Token, nie aus dem Request-Body
 - `seed_data.py` – befüllt die SQLite-Datenbank einmalig mit Beispiel-Tickets
-  und Demo-Usern
-- `test_rbac.py` – beweist Rollentrennung auf Engine-Ebene, auch wenn ein
-  sensibles Ticket inhaltlich der beste Treffer wäre
+  und Demo-Usern für beide Mandanten
+- `test_rbac.py` – beweist Rollen- und Tenant-Trennung auf Engine-Ebene, auch
+  wenn ein sensibles Ticket inhaltlich der beste Treffer wäre oder ein anderer
+  Mandant exakt dieselbe Rolle hat
 - `test_auth.py` – Passwort-Hashing, Token-Erzeugung/-Prüfung, manipulierte Tokens
 - `test_audit.py` – Such-Protokollierung plus Autorisierung (`support` bekommt
   403 auf `/audit-log`, `management` sieht den Log-Eintrag)
+- `test_tenancy.py` – beweist auf echter API-Ebene, dass zwei Mandanten mit
+  identischer Rolle und fast identischem Ticket-Text sich nie gegenseitig sehen,
+  auch nicht im Audit-Log
 
 Alle Tests nutzen bewusst immer den `HashingEmbedder` und eine eigene
 Test-Datenbankdatei, damit sie offline, kostenlos und ohne Seiteneffekte auf
 die echten Daten laufen.
 
-**Nicht Teil dieses Projekts:** Multi-Tenancy (mehrere Mandanten mit
-getrennten Daten im selben System — siehe
-[Issue #4](https://github.com/Arian710/mini-vector-rbac/issues/4)), HTTPS/Deployment.
+**Nicht Teil dieses Projekts:** HTTPS/Deployment (Reverse-Proxy, TLS-Zertifikat).
 
 ## Die 5 Konzepte dahinter
 
@@ -136,3 +144,16 @@ obendrauf — ein gültig eingeloggter `support`-User ist authentifiziert, aber
 für `/audit-log` nicht autorisiert und bekommt `403`. In `api.py` baut
 `require_management()` deshalb bewusst auf `get_current_user()` auf, statt die
 Rollenprüfung zu duplizieren.
+
+### 7. Multi-Tenancy
+
+Teilen sich mehrere Kunden (Mandanten) dieselbe Infrastruktur, reicht die
+Rolle allein nicht mehr aus: zwei Mandanten können beide eine Rolle
+`management` haben, dürfen sich aber niemals gegenseitig sehen. Der
+Tenant-Filter ist deshalb eine zweite, **härtere und vorgelagerte** Schranke
+in `search()` — er wird zuerst angewendet, noch vor dem Rollenfilter.
+`allowed_roles=["all"]` bedeutet dadurch "alle Rollen *dieses Mandanten*",
+nicht "alle Rollen weltweit". Derselbe Grundsatz wie bei RBAC gilt auch hier:
+`tenant_id` kommt ausschließlich aus dem geprüften JWT, nie aus einem
+Client-Feld — sonst könnte sich ein Nutzer einfach als anderer Mandant
+ausgeben.

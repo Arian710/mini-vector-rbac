@@ -21,11 +21,14 @@ import storage
 from data import TICKETS
 from embeddings import get_default_embedder
 
+# Zwei Mandanten (Tenants), die sich dieselbe Infrastruktur teilen - siehe
+# Konzept 6 (Multi-Tenancy). anna/bernd gehoeren zu kanzlei-mueller,
+# carla/david zu steuerberatung-schmidt.
 DEMO_USERS = [
-    {"username": "anna", "password": "demo1234", "role": "support"},
-    {"username": "bernd", "password": "demo1234", "role": "management"},
-    {"username": "carla", "password": "demo1234", "role": "support"},
-    {"username": "david", "password": "demo1234", "role": "management"},
+    {"username": "anna", "password": "demo1234", "role": "support", "tenant_id": "kanzlei-mueller"},
+    {"username": "bernd", "password": "demo1234", "role": "management", "tenant_id": "kanzlei-mueller"},
+    {"username": "carla", "password": "demo1234", "role": "support", "tenant_id": "steuerberatung-schmidt"},
+    {"username": "david", "password": "demo1234", "role": "management", "tenant_id": "steuerberatung-schmidt"},
 ]
 
 
@@ -37,11 +40,11 @@ def seed() -> None:
 
     for ticket in TICKETS:
         vector = embedder.embed(ticket["text"])
-        storage.save_ticket(ticket["id"], ticket["text"], vector, ticket["allowed_roles"])
-    print(f"{len(TICKETS)} Tickets gespeichert.")
+        storage.save_ticket(ticket["id"], ticket["text"], vector, ticket["allowed_roles"], ticket["tenant_id"])
+    print(f"{len(TICKETS)} Tickets gespeichert (2 Tenants).")
 
     for user in DEMO_USERS:
-        auth.register_user(user["username"], user["password"], user["role"])
+        auth.register_user(user["username"], user["password"], user["role"], user["tenant_id"])
     print(f"{len(DEMO_USERS)} Demo-User angelegt (Passwort für alle: 'demo1234').")
 
 

@@ -1,15 +1,18 @@
 """
-MiniVectorDB - eine winzige Vektordatenbank mit serverseitigem Rollenfilter.
+MiniVectorDB - eine winzige Vektordatenbank mit serverseitigem Tenant- und
+Rollenfilter.
 
-Diese Datei setzt 4 der 5 Konzepte aus unserem Dialog in Code um (das
+Diese Datei setzt mehrere Konzepte aus unserem Dialog in Code um (das
 Embedding selbst - Konzept 2 - steckt in embeddings.py und wird hier nur ueber
 das Embedder-Interface benutzt, damit MiniVectorDB nicht wissen muss, ob im
 Hintergrund ein Platzhalter oder Azure OpenAI laeuft):
 
-  Konzept 3: Cosine Sim.  -> cosine_similarity() misst den Winkel zwischen zwei Vektoren
-  Konzept 4: Brute-Force  -> search() vergleicht die Query stur mit JEDEM erlaubten Eintrag
-  Konzept 5: RBAC         -> der Rollenfilter sitzt INNERHALB von search(), nicht
-                              irgendwo "danach" beim Aufrufer
+  Konzept 3: Cosine Sim.   -> cosine_similarity() misst den Winkel zwischen zwei Vektoren
+  Konzept 4: Brute-Force   -> search() vergleicht die Query stur mit JEDEM erlaubten Eintrag
+  Konzept 5: RBAC          -> der Rollenfilter sitzt INNERHALB von search(), nicht
+                               irgendwo "danach" beim Aufrufer
+  Konzept 6: Multi-Tenancy -> der Tenant-Filter sitzt VOR dem Rollenfilter, als
+                               zusaetzliche, haertere Schranke
 """
 
 import numpy as np
@@ -33,23 +36,24 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
 
 
 class MiniVectorDB:
-    """Eine minimale Vektordatenbank mit eingebautem, serverseitigem Rollenfilter."""
+    """Eine minimale Vektordatenbank mit eingebautem, serverseitigem Tenant- und Rollenfilter."""
 
     def __init__(self, embedder: Embedder = None):
         # Ein Embedder wird injiziert statt fest verdrahtet - so kann main.py
         # echte Azure-Embeddings nutzen, waehrend test_rbac.py bewusst den
         # kostenlosen HashingEmbedder erzwingt (offline, deterministisch).
         self._embedder = embedder or HashingEmbedder()
-        self._entries = []  # jeder Eintrag: {"id", "text", "vector", "allowed_roles"}
+        self._entries = []  # jeder Eintrag: {"id", "text", "vector", "allowed_roles", "tenant_id"}
 
-    def add(self, ticket_id, text: str, allowed_roles: list) -> None:
+    def add(self, ticket_id, text: str, allowed_roles: list, tenant_id: str) -> None:
         """
         Fuegt ein Dokument zur Datenbank hinzu.
 
         Konzept 2 (Embedding): der Text wird hier ueber den injizierten Embedder
-        in einen Vektor uebersetzt und zusammen mit den erlaubten Rollen
-        gespeichert. allowed_roles=["all"] bedeutet: jede Rolle darf dieses
-        Dokument sehen.
+        in einen Vektor uebersetzt und zusammen mit den erlaubten Rollen und dem
+        Mandanten (tenant_id) gespeichert. allowed_roles=["all"] bedeutet: jede
+        Rolle INNERHALB DESSELBEN TENANTS darf dieses Dokument sehen - niemals
+        tenant-uebergreifend.
         """
         vector = self._embedder.embed(text)
         self._entries.append({
@@ -57,9 +61,10 @@ class MiniVectorDB:
             "text": text,
             "vector": vector,
             "allowed_roles": allowed_roles,
+            "tenant_id": tenant_id,
         })
 
-    def load_entry(self, ticket_id, text: str, vector: np.ndarray, allowed_roles: list) -> None:
+    def load_entry(self, ticket_id, text: str, vector: np.ndarray, allowed_roles: list, tenant_id: str) -> None:
         """
         Fuegt einen Eintrag mit BEREITS BERECHNETEM Vektor hinzu, z.B. beim
         Start aus der persistenten Datenbank geladen - ruft den Embedder NICHT
@@ -71,24 +76,31 @@ class MiniVectorDB:
             "text": text,
             "vector": vector,
             "allowed_roles": allowed_roles,
+            "tenant_id": tenant_id,
         })
 
     def __len__(self) -> int:
         return len(self._entries)
 
-    def search(self, query: str, role: str, top_k: int = 3) -> list:
+    def search(self, query: str, role: str, tenant_id: str, top_k: int = 3) -> list:
         """
         Sucht die aehnlichsten Dokumente zu einer Anfrage - aber NUR unter den
-        Dokumenten, die die uebergebene Rolle ueberhaupt sehen darf.
+        Dokumenten, die (a) demselben Tenant gehoeren UND (b) die uebergebene
+        Rolle ueberhaupt sehen darf.
 
-        Konzept 5 (RBAC serverseitig): der Rollenfilter passiert als ALLERERSTER
+        Konzept 6 (Multi-Tenancy): der Tenant-Filter ist die HAERTESTE und
+        ERSTE Schranke - noch vor der Rolle. Ein Dokument eines anderen
+        Tenants taucht nie auf, selbst wenn Rolle und allowed_roles perfekt
+        passen wuerden. Zwei Mandanten koennen identisch benannte Rollen
+        haben ("management" bei Kanzlei A und bei Kanzlei B) - das Tenant-Feld
+        verhindert, dass das zu einer Verwechslung wird.
+
+        Konzept 5 (RBAC serverseitig): der Rollenfilter passiert als naechster
         Schritt, bevor ueberhaupt eine Aehnlichkeit berechnet wird. Ein Dokument,
         das diese Rolle nicht sehen darf, verlaesst diese Methode nie - egal wie
-        gut es inhaltlich passen wuerde. Es gibt keinen Aufrufer-Code, der diesen
-        Filter vergessen oder umgehen koennte, weil er nicht "aussen", sondern
-        hier drin sitzt. WICHTIG: `role` muss von einer vertrauenswuerdigen,
-        serverseitigen Quelle kommen (siehe auth.py / api.py) - niemals direkt
-        vom Client uebernommen werden.
+        gut es inhaltlich passen wuerde. WICHTIG: `role` und `tenant_id` muessen
+        von einer vertrauenswuerdigen, serverseitigen Quelle kommen (siehe
+        auth.py / api.py) - niemals direkt vom Client uebernommen werden.
 
         Konzept 4 (Brute-Force): auf der erlaubten Teilmenge wird wirklich JEDER
         Eintrag durchgerechnet - kein Index, keine Abkuerzung.
@@ -97,9 +109,12 @@ class MiniVectorDB:
         """
         query_vector = self._embedder.embed(query)
 
-        # RBAC-Filter zuerst - nicht als nachtraeglicher Schritt.
+        # Tenant-Filter zuerst - haerteste Schranke, keine Ausnahme.
+        same_tenant = [entry for entry in self._entries if entry["tenant_id"] == tenant_id]
+
+        # RBAC-Filter danach, innerhalb des eigenen Tenants.
         allowed_entries = [
-            entry for entry in self._entries
+            entry for entry in same_tenant
             if "all" in entry["allowed_roles"] or role in entry["allowed_roles"]
         ]
 

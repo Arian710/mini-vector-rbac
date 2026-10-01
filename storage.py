@@ -42,20 +42,23 @@ def init_db(path: str = None) -> None:
                 id INTEGER PRIMARY KEY,
                 text TEXT NOT NULL,
                 vector TEXT NOT NULL,
-                allowed_roles TEXT NOT NULL
+                allowed_roles TEXT NOT NULL,
+                tenant_id TEXT NOT NULL
             )
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 username TEXT PRIMARY KEY,
                 password_hash TEXT NOT NULL,
-                role TEXT NOT NULL
+                role TEXT NOT NULL,
+                tenant_id TEXT NOT NULL
             )
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS search_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL,
+                tenant_id TEXT NOT NULL,
                 query TEXT NOT NULL,
                 result_count INTEGER NOT NULL,
                 created_at TEXT NOT NULL
@@ -63,62 +66,70 @@ def init_db(path: str = None) -> None:
         """)
 
 
-def save_ticket(ticket_id, text: str, vector: np.ndarray, allowed_roles: list, path: str = None) -> None:
+def save_ticket(ticket_id, text: str, vector: np.ndarray, allowed_roles: list,
+                 tenant_id: str, path: str = None) -> None:
     with _connect(path) as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO tickets (id, text, vector, allowed_roles) VALUES (?, ?, ?, ?)",
-            (ticket_id, text, json.dumps(vector.tolist()), json.dumps(allowed_roles)),
+            "INSERT OR REPLACE INTO tickets (id, text, vector, allowed_roles, tenant_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (ticket_id, text, json.dumps(vector.tolist()), json.dumps(allowed_roles), tenant_id),
         )
 
 
 def load_tickets(path: str = None) -> list:
     with _connect(path) as conn:
-        rows = conn.execute("SELECT id, text, vector, allowed_roles FROM tickets").fetchall()
+        rows = conn.execute("SELECT id, text, vector, allowed_roles, tenant_id FROM tickets").fetchall()
     return [
         {
             "id": row[0],
             "text": row[1],
             "vector": np.array(json.loads(row[2])),
             "allowed_roles": json.loads(row[3]),
+            "tenant_id": row[4],
         }
         for row in rows
     ]
 
 
-def save_user(username: str, password_hash: str, role: str, path: str = None) -> None:
+def save_user(username: str, password_hash: str, role: str, tenant_id: str, path: str = None) -> None:
     with _connect(path) as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO users (username, password_hash, role) VALUES (?, ?, ?)",
-            (username, password_hash, role),
+            "INSERT OR REPLACE INTO users (username, password_hash, role, tenant_id) "
+            "VALUES (?, ?, ?, ?)",
+            (username, password_hash, role, tenant_id),
         )
 
 
 def get_user(username: str, path: str = None):
     with _connect(path) as conn:
         row = conn.execute(
-            "SELECT username, password_hash, role FROM users WHERE username = ?", (username,)
+            "SELECT username, password_hash, role, tenant_id FROM users WHERE username = ?",
+            (username,),
         ).fetchone()
     if row is None:
         return None
-    return {"username": row[0], "password_hash": row[1], "role": row[2]}
+    return {"username": row[0], "password_hash": row[1], "role": row[2], "tenant_id": row[3]}
 
 
-def log_search(username: str, query: str, result_count: int, path: str = None) -> None:
+def log_search(username: str, tenant_id: str, query: str, result_count: int, path: str = None) -> None:
     """Protokolliert eine Suche. Wird von api.py aufgerufen, NICHT von db.py -
-    die Suchmaschine selbst kennt gar keinen Username, nur eine Rolle."""
+    die Suchmaschine selbst kennt gar keinen Username, nur Rolle und Tenant."""
     with _connect(path) as conn:
         conn.execute(
-            "INSERT INTO search_log (username, query, result_count, created_at) VALUES (?, ?, ?, ?)",
-            (username, query, result_count, datetime.now(timezone.utc).isoformat()),
+            "INSERT INTO search_log (username, tenant_id, query, result_count, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (username, tenant_id, query, result_count, datetime.now(timezone.utc).isoformat()),
         )
 
 
-def load_search_log(limit: int = 100, path: str = None) -> list:
+def load_search_log(tenant_id: str, limit: int = 100, path: str = None) -> list:
+    """Gibt NUR das Protokoll des eigenen Tenants zurueck - ein management-User
+    sieht sonst auch, wonach ein anderer Mandant gesucht hat."""
     with _connect(path) as conn:
         rows = conn.execute(
             "SELECT username, query, result_count, created_at FROM search_log "
-            "ORDER BY id DESC LIMIT ?",
-            (limit,),
+            "WHERE tenant_id = ? ORDER BY id DESC LIMIT ?",
+            (tenant_id, limit),
         ).fetchall()
     return [
         {"username": r[0], "query": r[1], "result_count": r[2], "created_at": r[3]}

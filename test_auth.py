@@ -30,13 +30,14 @@ def test_password_hash_is_not_plaintext():
 
 
 def test_authenticate_accepts_correct_password():
-    auth.register_user("testuser", "richtig123", "support")
-    role = auth.authenticate("testuser", "richtig123")
-    assert role == "support"
+    auth.register_user("testuser", "richtig123", "support", "kanzlei-mueller")
+    identity = auth.authenticate("testuser", "richtig123")
+    assert identity["role"] == "support"
+    assert identity["tenant_id"] == "kanzlei-mueller"
 
 
 def test_authenticate_rejects_wrong_password():
-    auth.register_user("testuser2", "richtig123", "support")
+    auth.register_user("testuser2", "richtig123", "support", "kanzlei-mueller")
     try:
         auth.authenticate("testuser2", "falsches_passwort")
         assert False, "Falsches Passwort hätte abgelehnt werden müssen"
@@ -44,17 +45,18 @@ def test_authenticate_rejects_wrong_password():
         pass
 
 
-def test_token_roundtrip_contains_correct_role():
-    token = auth.create_access_token("anna", "support")
+def test_token_roundtrip_contains_correct_role_and_tenant():
+    token = auth.create_access_token("anna", "support", "kanzlei-mueller")
     payload = auth.decode_access_token(token)
     assert payload["username"] == "anna"
     assert payload["role"] == "support"
+    assert payload["tenant_id"] == "kanzlei-mueller"
 
 
 def test_tampered_token_is_rejected():
     import jwt as pyjwt
 
-    token = auth.create_access_token("anna", "support")
+    token = auth.create_access_token("anna", "support", "kanzlei-mueller")
     try:
         pyjwt.decode(token + "tampered", auth._secret_key(), algorithms=["HS256"])
         assert False, "Manipuliertes Token hätte abgelehnt werden müssen"
@@ -66,7 +68,7 @@ TESTS = [
     test_password_hash_is_not_plaintext,
     test_authenticate_accepts_correct_password,
     test_authenticate_rejects_wrong_password,
-    test_token_roundtrip_contains_correct_role,
+    test_token_roundtrip_contains_correct_role_and_tenant,
     test_tampered_token_is_rejected,
 ]
 

@@ -26,32 +26,35 @@ from data import TICKETS
 from embeddings import HashingEmbedder
 
 
+TENANT = "kanzlei-mueller"
+
+
 def setup_module():
     if os.path.exists(storage.DB_PATH):
         os.remove(storage.DB_PATH)
     storage.init_db()
-    auth.register_user("anna", "demo1234", "support")
-    auth.register_user("bernd", "demo1234", "management")
+    auth.register_user("anna", "demo1234", "support", TENANT)
+    auth.register_user("bernd", "demo1234", "management", TENANT)
     embedder = HashingEmbedder()
     for ticket in TICKETS:
         vector = embedder.embed(ticket["text"])
-        storage.save_ticket(ticket["id"], ticket["text"], vector, ticket["allowed_roles"])
+        storage.save_ticket(ticket["id"], ticket["text"], vector, ticket["allowed_roles"], ticket["tenant_id"])
 
 
 # ---------------------------------------------------------- Teil 1: storage.py ---
 
 def test_log_search_roundtrip():
-    storage.log_search("anna", "Drucker kaputt", 2)
-    entries = storage.load_search_log()
+    storage.log_search("anna", TENANT, "Drucker kaputt", 2)
+    entries = storage.load_search_log(tenant_id=TENANT)
     assert entries[0]["username"] == "anna"
     assert entries[0]["query"] == "Drucker kaputt"
     assert entries[0]["result_count"] == 2
 
 
 def test_log_search_newest_first():
-    storage.log_search("bernd", "erste anfrage", 1)
-    storage.log_search("bernd", "zweite anfrage", 3)
-    entries = storage.load_search_log()
+    storage.log_search("bernd", TENANT, "erste anfrage", 1)
+    storage.log_search("bernd", TENANT, "zweite anfrage", 3)
+    entries = storage.load_search_log(tenant_id=TENANT)
     assert entries[0]["query"] == "zweite anfrage", "Neuester Eintrag muss zuerst kommen"
 
 

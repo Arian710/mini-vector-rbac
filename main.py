@@ -2,6 +2,10 @@
 Demo: zeigt MiniVectorDB direkt (ohne die Web-API/Login-Schicht), mit aus
 SQLite geladenen, bereits embeddeten Tickets.
 
+Zeigt gezielt Konzept 6 (Multi-Tenancy): dieselbe Anfrage, dieselbe Rolle
+"management", aber zwei verschiedene Tenants - jeder sieht nur sein eigenes,
+sehr aehnlich formuliertes Gehalts-Ticket, nie das des anderen Mandanten.
+
 Vorher einmal ausfuehren:  python seed_data.py
 """
 
@@ -19,12 +23,12 @@ def build_database() -> MiniVectorDB:
     # anderen Vektorraum als die gespeicherten Tickets.
     db = MiniVectorDB(embedder=get_default_embedder())
     for ticket in tickets:
-        db.load_entry(ticket["id"], ticket["text"], ticket["vector"], ticket["allowed_roles"])
+        db.load_entry(ticket["id"], ticket["text"], ticket["vector"], ticket["allowed_roles"], ticket["tenant_id"])
     return db
 
 
-def print_results(role: str, results: list) -> None:
-    print(f"\n=== Suche als Rolle '{role}' ===")
+def print_results(tenant_id: str, role: str, results: list) -> None:
+    print(f"\n=== Suche als Rolle '{role}' bei Tenant '{tenant_id}' ===")
     if not results:
         print("  (keine sichtbaren Treffer)")
         return
@@ -37,9 +41,10 @@ def main() -> None:
     query = "Wie sieht es mit Gehaeltern und Budget im Unternehmen aus?"
     print(f'Suchanfrage: "{query}"')
 
-    for role in ["support", "management"]:
-        results = db.search(query, role=role, top_k=3)
-        print_results(role, results)
+    for tenant_id in ["kanzlei-mueller", "steuerberatung-schmidt"]:
+        for role in ["support", "management"]:
+            results = db.search(query, role=role, tenant_id=tenant_id, top_k=3)
+            print_results(tenant_id, role, results)
 
 
 if __name__ == "__main__":

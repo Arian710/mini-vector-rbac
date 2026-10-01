@@ -49,7 +49,8 @@ storage.init_db()
 # sonst landet die Query in einem anderen Vektorraum als die gespeicherten Tickets.
 db = MiniVectorDB(embedder=get_default_embedder())
 for _ticket in storage.load_tickets():
-    db.load_entry(_ticket["id"], _ticket["text"], _ticket["vector"], _ticket["allowed_roles"])
+    db.load_entry(_ticket["id"], _ticket["text"], _ticket["vector"],
+                   _ticket["allowed_roles"], _ticket["tenant_id"])
 
 _security = HTTPBearer()
 
@@ -83,7 +84,8 @@ class AuditLogEntry(BaseModel):
 
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(_security)) -> dict:
-    """Authentication: prueft das Token und liefert {username, role} daraus - niemals aus dem Request-Body."""
+    """Authentication: prueft das Token und liefert {username, role, tenant_id} daraus -
+    niemals aus dem Request-Body."""
     try:
         return auth.decode_access_token(credentials.credentials)
     except jwt.PyJWTError:
@@ -106,20 +108,27 @@ def health():
 @app.post("/login", response_model=TokenResponse)
 def login(request: LoginRequest):
     try:
-        role = auth.authenticate(request.username, request.password)
+        identity = auth.authenticate(request.username, request.password)
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))
-    token = auth.create_access_token(request.username, role)
+    token = auth.create_access_token(request.username, identity["role"], identity["tenant_id"])
     return TokenResponse(access_token=token)
 
 
 @app.post("/search", response_model=List[SearchResult])
 def search(request: SearchRequest, current_user: dict = Depends(get_current_user)):
-    results = db.search(request.query, role=current_user["role"], top_k=request.top_k)
-    storage.log_search(current_user["username"], request.query, len(results))
+    results = db.search(
+        request.query,
+        role=current_user["role"],
+        tenant_id=current_user["tenant_id"],
+        top_k=request.top_k,
+    )
+    storage.log_search(current_user["username"], current_user["tenant_id"], request.query, len(results))
     return results
 
 
 @app.get("/audit-log", response_model=List[AuditLogEntry])
 def audit_log(current_user: dict = Depends(require_management)):
-    return storage.load_search_log()
+    # Nur das Protokoll des EIGENEN Tenants - sonst wuerde management eines
+    # Mandanten sehen, wonach ein anderer Mandant gesucht hat.
+    return storage.load_search_log(tenant_id=current_user["tenant_id"])
