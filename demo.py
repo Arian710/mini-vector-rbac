@@ -96,14 +96,28 @@ function render(containerId, results) {
 
 async function runSearch() {
   const query = document.getElementById("q").value;
-  if (!tokens.anna) tokens.anna = await login("anna", "demo1234");
-  if (!tokens.bernd) tokens.bernd = await login("bernd", "demo1234");
-  const [resAnna, resBernd] = await Promise.all([
-    search(tokens.anna, query),
-    search(tokens.bernd, query)
-  ]);
-  render("results-anna", resAnna);
-  render("results-bernd", resBernd);
+  const btn = document.querySelector("button");
+
+  // Sichtbares Feedback bei JEDEM Klick - auch wenn die Anfrage unveraendert ist
+  // und am Ende dieselben Treffer zurueckkommen (sonst wirkt ein Klick wie "tote Taste").
+  document.getElementById("results-anna").innerHTML = '<div class="empty">Suche laeuft...</div>';
+  document.getElementById("results-bernd").innerHTML = '<div class="empty">Suche laeuft...</div>';
+  btn.disabled = true;
+
+  try {
+    if (!tokens.anna) tokens.anna = await login("anna", "demo1234");
+    if (!tokens.bernd) tokens.bernd = await login("bernd", "demo1234");
+    const [resAnna, resBernd] = await Promise.all([
+      search(tokens.anna, query),
+      search(tokens.bernd, query)
+    ]);
+    render("results-anna", resAnna);
+    render("results-bernd", resBernd);
+  } catch (err) {
+    document.getElementById("results-anna").innerHTML = '<div class="empty">Fehler: ' + err + '</div>';
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 window.onload = runSearch;
