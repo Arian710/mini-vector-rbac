@@ -6,6 +6,9 @@ Oberfläche oder im API-Aufrufer. Entstanden als Lernprojekt, um Vektoren,
 Embeddings, Cosine Similarity und serverseitiges RBAC von Grund auf sauber zu
 verstehen und sichtbar zu machen.
 
+Alle Konzepte ausführlich erklärt, inklusive Interview-Fragenkatalog und
+Glossar: [docs/MiniVectorRBAC_eBook.pdf](docs/MiniVectorRBAC_eBook.pdf)
+
 ## Setup & Ausführen
 
 ```bash
