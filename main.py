@@ -7,6 +7,7 @@ Vorher einmal ausfuehren:  python seed_data.py
 
 import storage
 from db import MiniVectorDB
+from embeddings import get_default_embedder
 
 
 def build_database() -> MiniVectorDB:
@@ -14,7 +15,9 @@ def build_database() -> MiniVectorDB:
     tickets = storage.load_tickets()
     if not tickets:
         raise RuntimeError("Keine Tickets in der Datenbank. Zuerst 'python seed_data.py' ausführen.")
-    db = MiniVectorDB()
+    # Derselbe Embedder wie beim Seeden - sonst landet die Query in einem
+    # anderen Vektorraum als die gespeicherten Tickets.
+    db = MiniVectorDB(embedder=get_default_embedder())
     for ticket in tickets:
         db.load_entry(ticket["id"], ticket["text"], ticket["vector"], ticket["allowed_roles"])
     return db

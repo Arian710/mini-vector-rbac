@@ -11,38 +11,58 @@ verstehen und sichtbar zu machen.
 ```bash
 pip install -r requirements.txt
 
+python seed_data.py     # einmalig: Datenbank mit Beispieldaten + Demo-Usern befüllen
+
 python main.py          # Demo: gleiche Suche, zwei Rollen, unterschiedliche Ergebnisse
-python test_rbac.py     # 5 Tests, die die Rollentrennung beweisen
+python test_rbac.py     # Tests: Rollentrennung auf Engine-Ebene (db.py)
+python test_auth.py     # Tests: Passwort-Hashing, JWT-Erzeugung/-Prüfung
+python test_audit.py    # Tests: Audit-Log + Autorisierung auf API-Ebene
 
 uvicorn api:app --reload   # Web-API starten, Swagger-UI unter /docs
 ```
 
+Demo-Login (aus `seed_data.py`): `anna`/`carla` (Rolle `support`), `bernd`/`david`
+(Rolle `management`), Passwort für alle `demo1234` — nur fürs lokale Ausprobieren.
+
 **Echte Embeddings statt Platzhalter:** `.env.example` nach `.env` kopieren und
 mit einer eigenen Azure-OpenAI-Ressource befüllen (Endpoint, Key,
-Deployment-Name eines Embedding-Modells wie `text-embedding-3-small`). Ohne
-`.env` läuft alles automatisch mit dem kostenlosen `HashingEmbedder` weiter.
+Deployment-Name eines Embedding-Modells wie `text-embedding-3-small`), plus
+einen eigenen `JWT_SECRET_KEY`. Ohne `.env` läuft alles automatisch mit dem
+kostenlosen `HashingEmbedder` weiter.
 
 ## Projektstruktur
 
 - `data.py` – Beispiel-Tickets, gemischt aus allgemeinen (`allowed_roles=["all"]`)
   und sensiblen Finanz-/HR-Tickets (`allowed_roles=["management"]`)
-- `auth.py` – simulierte User→Rolle-Zuordnung (kein echtes Login)
+- `auth.py` – echtes Login: bcrypt-Passwort-Hashing, JWT-Erzeugung und -Prüfung
+- `storage.py` – SQLite-Persistenz (Tickets inkl. Vektor, User, Such-Protokoll);
+  komplett getrennt von der Suchlogik in `db.py`
 - `embeddings.py` – Embedder-Abstraktion: `HashingEmbedder` (kostenloser,
   deterministischer Platzhalter) und `AzureOpenAIEmbedder` (echtes, trainiertes
   Modell über die Azure-OpenAI-API); `get_default_embedder()` wählt automatisch
-- `db.py` – `MiniVectorDB` mit `add()` und `search()`, inkl. Cosine Similarity,
-  Brute-Force-Suche und Rollenfilter; bekommt den Embedder als Abhängigkeit
-  injiziert statt ihn selbst festzulegen
-- `main.py` – CLI-Demo: dieselbe Anfrage von zwei Usern mit unterschiedlichen Rollen
-- `api.py` – FastAPI-Web-API um `MiniVectorDB`; die Rolle wird ausschließlich
-  serverseitig aus dem `username` aufgelöst, nie direkt vom Client übernommen
-- `test_rbac.py` – Tests, die beweisen, dass unautorisierte Nutzer sensible
-  Tickets nie sehen, auch wenn sie der beste inhaltliche Treffer wären; nutzt
-  bewusst immer den `HashingEmbedder`, damit Tests offline und kostenlos laufen
+- `db.py` – `MiniVectorDB` mit `add()`/`load_entry()` und `search()`, inkl.
+  Cosine Similarity, Brute-Force-Suche und Rollenfilter; bekommt den Embedder
+  als Abhängigkeit injiziert statt ihn selbst festzulegen
+- `main.py` – CLI-Demo: lädt aus SQLite, zeigt dieselbe Anfrage für zwei Rollen
+- `api.py` – FastAPI-Web-API: `/login` gibt ein JWT aus, `/search` verlangt es
+  im `Authorization`-Header, `/audit-log` zusätzlich nur für Rolle `management`.
+  Username und Rolle kommen ausschließlich aus dem geprüften Token, nie aus dem
+  Request-Body
+- `seed_data.py` – befüllt die SQLite-Datenbank einmalig mit Beispiel-Tickets
+  und Demo-Usern
+- `test_rbac.py` – beweist Rollentrennung auf Engine-Ebene, auch wenn ein
+  sensibles Ticket inhaltlich der beste Treffer wäre
+- `test_auth.py` – Passwort-Hashing, Token-Erzeugung/-Prüfung, manipulierte Tokens
+- `test_audit.py` – Such-Protokollierung plus Autorisierung (`support` bekommt
+  403 auf `/audit-log`, `management` sieht den Log-Eintrag)
 
-**Nicht Teil dieses Projekts:** echtes JWT/Login (User→Rolle bleibt ein
-simuliertes Dictionary in `auth.py`), Persistenz über einen Prozessneustart
-hinaus, Multi-Tenancy.
+Alle Tests nutzen bewusst immer den `HashingEmbedder` und eine eigene
+Test-Datenbankdatei, damit sie offline, kostenlos und ohne Seiteneffekte auf
+die echten Daten laufen.
+
+**Nicht Teil dieses Projekts:** Multi-Tenancy (mehrere Mandanten mit
+getrennten Daten im selben System — siehe
+[Issue #4](https://github.com/Arian710/mini-vector-rbac/issues/4)), HTTPS/Deployment.
 
 ## Die 5 Konzepte dahinter
 
@@ -106,3 +126,13 @@ einer Rolle versehen sein, und der Filter muss dafür sorgen, dass unerlaubte
 Daten den Server erst gar nicht verlassen — nicht erst nachträglich
 ausgeblendet werden. In `db.py` sitzt der Filter deshalb direkt in
 `search()`, bevor überhaupt eine Ähnlichkeit berechnet wird.
+
+### 6. Authentication vs. Authorization
+
+Zwei unterschiedliche Fragen, die leicht verwechselt werden: **Authentication**
+("Wer bist du?") prüft ein gültiges JWT bei jeder Anfrage. **Authorization**
+("Darfst du *das hier*?") ist eine zusätzliche, endpunkt-spezifische Prüfung
+obendrauf — ein gültig eingeloggter `support`-User ist authentifiziert, aber
+für `/audit-log` nicht autorisiert und bekommt `403`. In `api.py` baut
+`require_management()` deshalb bewusst auf `get_current_user()` auf, statt die
+Rollenprüfung zu duplizieren.

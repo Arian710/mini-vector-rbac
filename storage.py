@@ -18,6 +18,7 @@ und der echte, aktuelle Wert wird erst INNERHALB der Funktion nachgeschlagen.
 import json
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime, timezone
 
 import numpy as np
 
@@ -49,6 +50,15 @@ def init_db(path: str = None) -> None:
                 username TEXT PRIMARY KEY,
                 password_hash TEXT NOT NULL,
                 role TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS search_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                query TEXT NOT NULL,
+                result_count INTEGER NOT NULL,
+                created_at TEXT NOT NULL
             )
         """)
 
@@ -91,3 +101,26 @@ def get_user(username: str, path: str = None):
     if row is None:
         return None
     return {"username": row[0], "password_hash": row[1], "role": row[2]}
+
+
+def log_search(username: str, query: str, result_count: int, path: str = None) -> None:
+    """Protokolliert eine Suche. Wird von api.py aufgerufen, NICHT von db.py -
+    die Suchmaschine selbst kennt gar keinen Username, nur eine Rolle."""
+    with _connect(path) as conn:
+        conn.execute(
+            "INSERT INTO search_log (username, query, result_count, created_at) VALUES (?, ?, ?, ?)",
+            (username, query, result_count, datetime.now(timezone.utc).isoformat()),
+        )
+
+
+def load_search_log(limit: int = 100, path: str = None) -> list:
+    with _connect(path) as conn:
+        rows = conn.execute(
+            "SELECT username, query, result_count, created_at FROM search_log "
+            "ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [
+        {"username": r[0], "query": r[1], "result_count": r[2], "created_at": r[3]}
+        for r in rows
+    ]

@@ -10,6 +10,9 @@ Ablauf:
    Username UND Rolle direkt aus dem TOKEN - nicht mehr aus dem Request-Body.
    Ein Client kann sich also weder eine andere Rolle noch einen anderen
    Username zuschreiben, ohne den Server-seitigen JWT_SECRET_KEY zu kennen.
+4. Jede Suche wird protokolliert (storage.log_search). /audit-log zeigt dieses
+   Protokoll - aber nur der Rolle management (Authentication reicht hier nicht,
+   es braucht zusaetzlich Authorization: siehe require_management()).
 
 Start:
     python seed_data.py     # einmalig, befuellt die Datenbank
@@ -33,6 +36,7 @@ from pydantic import BaseModel
 import auth
 import storage
 from db import MiniVectorDB
+from embeddings import get_default_embedder
 
 app = FastAPI(
     title="Mini Vector DB mit RBAC",
@@ -41,7 +45,9 @@ app = FastAPI(
 )
 
 storage.init_db()
-db = MiniVectorDB()
+# WICHTIG: derselbe Embedder, der auch beim Seeden benutzt wurde (seed_data.py) -
+# sonst landet die Query in einem anderen Vektorraum als die gespeicherten Tickets.
+db = MiniVectorDB(embedder=get_default_embedder())
 for _ticket in storage.load_tickets():
     db.load_entry(_ticket["id"], _ticket["text"], _ticket["vector"], _ticket["allowed_roles"])
 
@@ -69,12 +75,27 @@ class SearchResult(BaseModel):
     score: float
 
 
+class AuditLogEntry(BaseModel):
+    username: str
+    query: str
+    result_count: int
+    created_at: str
+
+
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(_security)) -> dict:
-    """Prueft das mitgeschickte Token und liefert {username, role} daraus - niemals aus dem Request-Body."""
+    """Authentication: prueft das Token und liefert {username, role} daraus - niemals aus dem Request-Body."""
     try:
         return auth.decode_access_token(credentials.credentials)
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Ungültiges oder abgelaufenes Token")
+
+
+def require_management(current_user: dict = Depends(get_current_user)) -> dict:
+    """Authorization: baut auf get_current_user auf (muss zuerst gueltig eingeloggt sein),
+    prueft zusaetzlich, ob die Rolle das Recht fuer DIESEN Endpunkt hat."""
+    if current_user["role"] != "management":
+        raise HTTPException(status_code=403, detail="Nur für die Rolle management sichtbar")
+    return current_user
 
 
 @app.get("/health")
@@ -94,4 +115,11 @@ def login(request: LoginRequest):
 
 @app.post("/search", response_model=List[SearchResult])
 def search(request: SearchRequest, current_user: dict = Depends(get_current_user)):
-    return db.search(request.query, role=current_user["role"], top_k=request.top_k)
+    results = db.search(request.query, role=current_user["role"], top_k=request.top_k)
+    storage.log_search(current_user["username"], request.query, len(results))
+    return results
+
+
+@app.get("/audit-log", response_model=List[AuditLogEntry])
+def audit_log(current_user: dict = Depends(require_management)):
+    return storage.load_search_log()
