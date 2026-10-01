@@ -1,20 +1,21 @@
 """
-Web-API fuer MiniVectorDB (FastAPI).
+Web-API fuer MiniVectorDB (FastAPI) mit echtem JWT-Login.
 
-WICHTIGER DESIGN-PUNKT (Konzept 5, jetzt als echte HTTP-API): der Client
-schickt einen `username`, NIEMALS eine Rolle direkt. Die Rolle wird
-ausschliesslich serverseitig ueber auth.get_role() nachgeschlagen. Wuerde
-stattdessen z.B. `role` als Feld im Request-Body akzeptiert, koennte sich
-jeder Client einfach selbst zu "management" erklaeren - der ganze Rollenfilter
-in db.py waere wertlos. Das ist derselbe Grundsatz aus unserem Dialog, nur
-jetzt an der echten Netzwerkgrenze durchgesetzt statt nur als Funktionsaufruf.
+Ablauf:
+1. Client ruft POST /login mit username+password auf, bekommt bei Erfolg ein
+   signiertes JWT zurueck.
+2. Client ruft POST /search auf und schickt das JWT im Authorization-Header
+   ("Authorization: Bearer <token>").
+3. Die API prueft die Signatur (auth.decode_access_token) und entnimmt
+   Username UND Rolle direkt aus dem TOKEN - nicht mehr aus dem Request-Body.
+   Ein Client kann sich also weder eine andere Rolle noch einen anderen
+   Username zuschreiben, ohne den Server-seitigen JWT_SECRET_KEY zu kennen.
 
 Start:
+    python seed_data.py     # einmalig, befuellt die Datenbank
     uvicorn api:app --reload
-Dann Swagger-UI unter http://127.0.0.1:8000/docs
+Swagger-UI: http://127.0.0.1:8000/docs
 """
-
-from typing import List
 
 try:
     from dotenv import load_dotenv
@@ -22,28 +23,42 @@ try:
 except ImportError:
     pass
 
-from fastapi import FastAPI, HTTPException
+from typing import List
+
+import jwt
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
-from auth import USERS, get_role
-from data import TICKETS
+import auth
+import storage
 from db import MiniVectorDB
-from embeddings import get_default_embedder
 
 app = FastAPI(
     title="Mini Vector DB mit RBAC",
-    description="Brute-Force-Vektorsuche mit serverseitig erzwungenem Rollenfilter.",
-    version="1.0.0",
+    description="Brute-Force-Vektorsuche mit serverseitig erzwungenem Rollenfilter und echtem JWT-Login.",
+    version="2.0.0",
 )
 
-_embedder = get_default_embedder()
-db = MiniVectorDB(embedder=_embedder)
-for _ticket in TICKETS:
-    db.add(_ticket["id"], _ticket["text"], _ticket["allowed_roles"])
+storage.init_db()
+db = MiniVectorDB()
+for _ticket in storage.load_tickets():
+    db.load_entry(_ticket["id"], _ticket["text"], _ticket["vector"], _ticket["allowed_roles"])
+
+_security = HTTPBearer()
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
 
 
 class SearchRequest(BaseModel):
-    username: str
     query: str
     top_k: int = 3
 
@@ -54,25 +69,29 @@ class SearchResult(BaseModel):
     score: float
 
 
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(_security)) -> dict:
+    """Prueft das mitgeschickte Token und liefert {username, role} daraus - niemals aus dem Request-Body."""
+    try:
+        return auth.decode_access_token(credentials.credentials)
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Ungültiges oder abgelaufenes Token")
+
+
 @app.get("/health")
 def health():
-    return {
-        "status": "ok",
-        "embedder": type(_embedder).__name__,
-        "tickets_indexed": len(TICKETS),
-    }
+    return {"status": "ok", "tickets_indexed": len(db)}
+
+
+@app.post("/login", response_model=TokenResponse)
+def login(request: LoginRequest):
+    try:
+        role = auth.authenticate(request.username, request.password)
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    token = auth.create_access_token(request.username, role)
+    return TokenResponse(access_token=token)
 
 
 @app.post("/search", response_model=List[SearchResult])
-def search(request: SearchRequest):
-    """
-    Sucht Tickets fuer den angegebenen User.
-
-    Die Rolle wird NIE aus dem Request uebernommen, sondern serverseitig ueber
-    auth.get_role(username) bestimmt - siehe Moduldocstring oben.
-    """
-    if request.username not in USERS:
-        raise HTTPException(status_code=401, detail="Unbekannter User")
-
-    role = get_role(request.username)
-    return db.search(request.query, role=role, top_k=request.top_k)
+def search(request: SearchRequest, current_user: dict = Depends(get_current_user)):
+    return db.search(request.query, role=current_user["role"], top_k=request.top_k)

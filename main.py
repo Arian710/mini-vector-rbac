@@ -1,36 +1,27 @@
 """
-Demo: dieselbe Suchanfrage, gestellt von zwei Usern mit unterschiedlichen Rollen.
-Zeigt, dass der Rollenfilter in db.py wirklich unterschiedliche Ergebnisse liefert -
-nicht nur unterschiedlich angezeigte, sondern unterschiedlich ZURUECKGEGEBENE Daten.
+Demo: zeigt MiniVectorDB direkt (ohne die Web-API/Login-Schicht), mit aus
+SQLite geladenen, bereits embeddeten Tickets.
 
-Nutzt automatisch echte Azure-Embeddings, falls in .env konfiguriert, sonst den
-kostenlosen Platzhalter-Embedder (siehe embeddings.py).
+Vorher einmal ausfuehren:  python seed_data.py
 """
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
-
-from data import TICKETS
+import storage
 from db import MiniVectorDB
-from auth import get_role
-from embeddings import get_default_embedder
 
 
 def build_database() -> MiniVectorDB:
-    embedder = get_default_embedder()
-    print(f"Verwende Embedder: {type(embedder).__name__}")
-    db = MiniVectorDB(embedder=embedder)
-    for ticket in TICKETS:
-        db.add(ticket["id"], ticket["text"], ticket["allowed_roles"])
+    storage.init_db()
+    tickets = storage.load_tickets()
+    if not tickets:
+        raise RuntimeError("Keine Tickets in der Datenbank. Zuerst 'python seed_data.py' ausführen.")
+    db = MiniVectorDB()
+    for ticket in tickets:
+        db.load_entry(ticket["id"], ticket["text"], ticket["vector"], ticket["allowed_roles"])
     return db
 
 
-def print_results(username: str, results: list) -> None:
-    role = get_role(username)
-    print(f"\n=== Suche als '{username}' (Rolle: {role}) ===")
+def print_results(role: str, results: list) -> None:
+    print(f"\n=== Suche als Rolle '{role}' ===")
     if not results:
         print("  (keine sichtbaren Treffer)")
         return
@@ -43,10 +34,9 @@ def main() -> None:
     query = "Wie sieht es mit Gehaeltern und Budget im Unternehmen aus?"
     print(f'Suchanfrage: "{query}"')
 
-    for username in ["anna", "bernd"]:
-        role = get_role(username)
+    for role in ["support", "management"]:
         results = db.search(query, role=role, top_k=3)
-        print_results(username, results)
+        print_results(role, results)
 
 
 if __name__ == "__main__":

@@ -59,6 +59,23 @@ class MiniVectorDB:
             "allowed_roles": allowed_roles,
         })
 
+    def load_entry(self, ticket_id, text: str, vector: np.ndarray, allowed_roles: list) -> None:
+        """
+        Fuegt einen Eintrag mit BEREITS BERECHNETEM Vektor hinzu, z.B. beim
+        Start aus der persistenten Datenbank geladen - ruft den Embedder NICHT
+        erneut auf. Verhindert, dass bei jedem Neustart alle Texte erneut (und
+        bei Azure: erneut kostenpflichtig) embedded werden muessen.
+        """
+        self._entries.append({
+            "id": ticket_id,
+            "text": text,
+            "vector": vector,
+            "allowed_roles": allowed_roles,
+        })
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
     def search(self, query: str, role: str, top_k: int = 3) -> list:
         """
         Sucht die aehnlichsten Dokumente zu einer Anfrage - aber NUR unter den
