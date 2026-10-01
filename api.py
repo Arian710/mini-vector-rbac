@@ -30,12 +30,14 @@ from typing import List
 
 import jwt
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 import auth
 import storage
 from db import MiniVectorDB
+from demo import DEMO_HTML
 from embeddings import get_default_embedder
 
 app = FastAPI(
@@ -103,6 +105,12 @@ def require_management(current_user: dict = Depends(get_current_user)) -> dict:
 @app.get("/health")
 def health():
     return {"status": "ok", "tickets_indexed": len(db)}
+
+
+@app.get("/demo", response_class=HTMLResponse)
+def demo_page():
+    """Visuelle Live-Demo fuer Vorfuehrungen/Demo-GIFs - kein Terminal noetig."""
+    return DEMO_HTML
 
 
 @app.post("/login", response_model=TokenResponse)
