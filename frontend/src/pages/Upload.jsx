@@ -103,6 +103,13 @@ export default function Upload() {
             <h3 style={styles.cardTitle}>Extrahierter Text</h3>
             <div style={styles.textPreview}>{suggestion.text}</div>
 
+            {suggestion.ocr_used && (
+              <div style={styles.notice}>
+                PDF hatte keine Text-Ebene (vermutlich gescannt/fotografiert) &mdash; Text per Azure-OCR erkannt.
+                Bei schlechter Scan-Qualitaet kann die Erkennung Fehler enthalten, kurz gegenpruefen lohnt sich.
+              </div>
+            )}
+
             {suggestion.chunk_count > 1 && (
               <div style={styles.notice}>
                 Dokument ist lang &mdash; wird beim Speichern automatisch in {suggestion.chunk_count} durchsuchbare

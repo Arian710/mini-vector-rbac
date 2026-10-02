@@ -126,6 +126,7 @@ class SuggestResponse(BaseModel):
     suggested_role: str
     reasons: List[str]
     chunk_count: int  # wie viele Abschnitte beim Speichern entstehen (1 = kein Chunking noetig)
+    ocr_used: bool = False  # True, wenn die PDF keine Text-Ebene hatte und Azure OCR eingesprungen ist
 
 
 class SaveDocumentRequest(BaseModel):
@@ -230,7 +231,7 @@ def suggest_document(
     """
     try:
         raw = file.file.read()
-        text = documents.extract_text(file.filename, raw)
+        text, ocr_used = documents.extract_text(file.filename, raw)
     except documents.UnsupportedFileType as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -244,7 +245,7 @@ def suggest_document(
     tenant_entries = db.entries_for_tenant(current_user["tenant_id"])
     suggestion = role_suggestion.suggest_role(text, vector, tenant_entries)
 
-    return SuggestResponse(text=text, chunk_count=len(chunks), **suggestion)
+    return SuggestResponse(text=text, chunk_count=len(chunks), ocr_used=ocr_used, **suggestion)
 
 
 @app.post("/documents", response_model=SaveDocumentResponse)
