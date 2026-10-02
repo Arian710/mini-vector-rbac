@@ -88,6 +88,7 @@ sobald eine erste Grundversion steht — Zeitpunkt entscheiden wir dann zusammen
 | 6.3 | Bei <3 Referenzdokumenten pro Kategorie wird NUR die Keyword-Heuristik genutzt (kein Embedding-Vergleich) | 🤖 zu ergänzen | ☐ offen |
 | 6.4 | Vorschlag kann vor dem Speichern manuell überschrieben werden | 👤 Browser | ☐ offen |
 | 6.5 | Kein Dokument wird je ohne menschliche Bestätigung gespeichert (kein Auto-Save direkt nach Upload) | 👤 Code-Review (Architektur-Check) | ✅ geprüft (zweistufiger Flow) |
+| 6.6 | Generalisiert seit Rollen-Verwaltung: neue, selbst angelegte Rolle (z.B. "Buchhaltung") wird korrekt vorgeschlagen, inkl. Keyword- UND Embedding-Signal, OHNE ein einziges Referenzdokument (Kaltstart gelöst durch Rollenbeschreibungs-Anker) | 🤖 curl verifiziert | ✅ geprüft |
 
 ## 7. Graph-Visualisierung
 
@@ -118,6 +119,24 @@ sobald eine erste Grundversion steht — Zeitpunkt entscheiden wir dann zusammen
 | 9.3 | App funktioniert nach frischem `git clone` + `pip install -r requirements.txt` + `npm install` ohne manuelle Zusatzschritte außer `.env` befüllen | 👤 Browser (am besten auf einem zweiten Rechner/Mac testen) | ☐ offen |
 | 9.4 | Responsives Verhalten auf kleineren Bildschirmen (Laptop-Breite) ist nutzbar | 👤 Browser | ☐ offen |
 | 9.5 | Kein Secret (Azure-Key, JWT-Secret) taucht in Git-Historie oder in Browser-DevTools-Netzwerk-Tab im Klartext auf (JWT-Payload ist zwar sichtbar, aber unsigniert nicht fälschbar — das ist gewollt) | 👤 Review | ☐ offen |
+
+## 10. Individuelle Rollen-Verwaltung
+
+| # | Testfall | Typ | Status |
+|---|----------|-----|--------|
+| 10.1 | Backfill: bestehender Tenant ohne eigene Rollen bekommt beim Serverstart automatisch "all"/"support"/"management" nachgetragen | 🤖 isolierter Script-Test verifiziert | ✅ geprüft |
+| 10.2 | Neue Rolle anlegen (Name + Beschreibung) funktioniert, Embedding-Anker wird berechnet | 🤖 curl verifiziert | ✅ geprüft |
+| 10.3 | Doppelter Rollenname im selben Tenant wird abgelehnt (409) | 🤖 isolierter Script-Test verifiziert | ✅ geprüft |
+| 10.4 | Gleicher Rollenname in ZWEI verschiedenen Tenants ist erlaubt (kein globaler Konflikt) | 🤖 zu ergänzen | ☐ offen |
+| 10.5 | Systemrollen ("all", "management") können nicht umbenannt werden | 🤖 isolierter Script-Test verifiziert | ✅ geprüft |
+| 10.6 | Systemrollen können nicht gelöscht werden (403) | 🤖 curl + isolierter Test verifiziert | ✅ geprüft |
+| 10.7 | Löschen einer Rolle, die noch von Dokumenten/Usern verwendet wird, wird blockiert (409) mit korrekter Anzahl | 🤖 curl verifiziert, 👤 Browser bestätigt | ✅ geprüft |
+| 10.8 | Löschen einer unbenutzten, eigenen Rolle funktioniert | 🤖 isolierter Script-Test verifiziert | ✅ geprüft |
+| 10.9 | `support`-User (nicht management) bekommt 403 auf alle `/roles`-Endpoints | 🤖 curl verifiziert | ✅ geprüft |
+| 10.10 | Dokument speichern mit einer Rolle, die im Tenant nicht existiert, wird abgelehnt (422) | 🤖 curl verifiziert | ✅ geprüft |
+| 10.11 | "Rollen"-Navigationspunkt ist für `support`-Rolle nicht sichtbar | 👤 Browser (als anna einloggen) | ☐ offen |
+| 10.12 | Rollenauswahl im Upload-Flow lädt dynamisch alle Tenant-Rollen (nicht mehr hartcodiert all/management) | 👤 Browser mit echtem Datei-Upload | ☐ offen |
+| 10.13 | Rolle umbenennen über die UI, danach korrekt überall (Suche, Graph, Upload-Dropdown) mit neuem Namen sichtbar | 👤 Browser | ☐ offen |
 
 ---
 
