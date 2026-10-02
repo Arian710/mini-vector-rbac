@@ -15,6 +15,16 @@ import os
 
 os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-key")
 
+# Erzwingt den HashingEmbedder-Fallback in api.py, UNABHAENGIG davon, ob eine
+# echte .env mit Azure-Zugangsdaten existiert. Leerstring statt pop(): dotenv's
+# load_dotenv() ueberschreibt NIE bereits gesetzte Variablen (override=False),
+# ein bereits auf "" gesetzter Wert bleibt also "" statt aus der .env befuellt
+# zu werden - sonst wuerde dieser Test versuchen, Query-Vektoren (Azure,
+# 1536-dim) mit den bewusst Hashing-eingebetteten Test-Tickets (64-dim) zu
+# vergleichen und mit einem Shape-Mismatch abstuerzen.
+for _azure_var in ("AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_EMBEDDING_DEPLOYMENT"):
+    os.environ[_azure_var] = ""
+
 import storage
 
 storage.DB_PATH = "test_tenancy.db"

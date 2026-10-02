@@ -38,7 +38,10 @@ export default function GraphView() {
           data.nodes.map((n) => ({
             id: n.id,
             label: truncate(n.text),
-            title: n.text,
+            title: n.customer_label ? `${n.text}\n\nKunde: ${n.customer_label}` : n.text,
+            color: n.restricted
+              ? { background: "#b4551f", border: "#8a3f14", highlight: { background: "#8a3f14", border: "#8a3f14" } }
+              : { background: "#0f6e56", border: "#0a4536", highlight: { background: "#0a4536", border: "#0a4536" } },
           }))
         );
         const edges = new DataSet(
@@ -115,8 +118,18 @@ export default function GraphView() {
       {loading && <div style={styles.status}>Graph wird geladen...</div>}
       {error && <div style={styles.error}>{error}</div>}
       {!loading && !error && (
-        <div style={styles.meta}>
-          {nodeCount} Dokumente &mdash; Klick auf einen Knoten hebt verbundene Dokumente hervor, Scrollen zoomt.
+        <div style={styles.metaRow}>
+          <div style={styles.meta}>
+            {nodeCount} Dokumente &mdash; Klick auf einen Knoten hebt verbundene Dokumente hervor, Scrollen zoomt.
+          </div>
+          <div style={styles.legend}>
+            <span style={styles.legendItem}>
+              <span style={{ ...styles.dot, background: "#0f6e56" }} /> Alle Rollen
+            </span>
+            <span style={styles.legendItem}>
+              <span style={{ ...styles.dot, background: "#b4551f" }} /> Nur Management
+            </span>
+          </div>
         </div>
       )}
       <div ref={containerRef} style={styles.canvas} />
@@ -133,7 +146,11 @@ const styles = {
     background: "var(--card-bg)",
   },
   status: { color: "var(--muted)", fontSize: 13 },
+  metaRow: { display: "flex", justifyContent: "space-between", alignItems: "center" },
   meta: { color: "var(--muted)", fontSize: 12 },
+  legend: { display: "flex", gap: 14 },
+  legendItem: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" },
+  dot: { width: 9, height: 9, borderRadius: "50%", display: "inline-block" },
   error: {
     background: "var(--mgmt-pale)",
     color: "var(--mgmt)",

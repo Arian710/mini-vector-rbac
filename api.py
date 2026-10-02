@@ -100,6 +100,8 @@ class AuditLogEntry(BaseModel):
 class GraphNode(BaseModel):
     id: int
     text: str
+    restricted: bool
+    customer_label: Optional[str] = None
 
 
 class GraphEdge(BaseModel):

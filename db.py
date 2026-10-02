@@ -145,7 +145,7 @@ class MiniVectorDB:
             for score, entry in scored[:top_k]
         ]
 
-    def graph_data(self, role: str, tenant_id: str, top_neighbors: int = 5) -> dict:
+    def graph_data(self, role: str, tenant_id: str, top_neighbors: int = 5, min_similarity: float = 0.35) -> dict:
         """
         Liefert Knoten+Kanten fuer eine Obsidian-artige Graph-Ansicht - nutzt
         denselben Tenant-/RBAC-Filter wie search(), damit niemand ein Dokument
@@ -156,9 +156,22 @@ class MiniVectorDB:
         O(n^2) Kanten - bei 1000 Dokumenten also bis zu ~500.000. Stattdessen
         bekommt jeder Knoten nur seine `top_neighbors` aehnlichsten Nachbarn,
         das haelt den Graph unabhaengig von der Tenant-Groesse renderbar.
+
+        min_similarity filtert zusaetzlich schwache Kanten heraus (z.B. Platz 5
+        von 5 moeglichen Nachbarn, aber inhaltlich kaum verwandt) - sonst wirkt
+        der Graph bei vielen Dokumenten wie ein undurchsichtiger "Haarball"
+        statt klar erkennbarer Themen-Cluster.
         """
         entries = self._allowed_entries(role, tenant_id)
-        nodes = [{"id": entry["id"], "text": entry["text"]} for entry in entries]
+        nodes = [
+            {
+                "id": entry["id"],
+                "text": entry["text"],
+                "restricted": "all" not in entry["allowed_roles"],
+                "customer_label": entry.get("customer_label"),
+            }
+            for entry in entries
+        ]
 
         best_weight = {}
         for entry in entries:
@@ -168,6 +181,8 @@ class MiniVectorDB:
             ]
             similarities.sort(key=lambda pair: pair[0], reverse=True)
             for score, other_id in similarities[:top_neighbors]:
+                if score < min_similarity:
+                    continue
                 key = frozenset((entry["id"], other_id))
                 if key not in best_weight or score > best_weight[key]:
                     best_weight[key] = score

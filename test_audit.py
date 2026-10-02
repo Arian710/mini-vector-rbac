@@ -17,6 +17,12 @@ import os
 
 os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-key")
 
+# Erzwingt den HashingEmbedder-Fallback in api.py, unabhaengig von einer
+# evtl. vorhandenen .env mit echten Azure-Zugangsdaten - siehe test_tenancy.py
+# fuer die ausfuehrliche Begruendung (Shape-Mismatch 1536 vs. 64 sonst).
+for _azure_var in ("AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_EMBEDDING_DEPLOYMENT"):
+    os.environ[_azure_var] = ""
+
 import storage
 
 storage.DB_PATH = "test_audit.db"
