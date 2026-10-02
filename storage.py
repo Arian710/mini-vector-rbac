@@ -46,12 +46,18 @@ def init_db(path: str = None) -> None:
                 tenant_id TEXT NOT NULL
             )
         """)
-        # Migration fuer Datenbanken, die vor dem Upload-Feature angelegt wurden -
-        # ALTER TABLE ADD COLUMN kennt kein "IF NOT EXISTS", daher der try/except.
-        try:
-            conn.execute("ALTER TABLE tickets ADD COLUMN customer_label TEXT")
-        except sqlite3.OperationalError:
-            pass
+        # Migrationen fuer Datenbanken, die vor den jeweiligen Features angelegt
+        # wurden - ALTER TABLE ADD COLUMN kennt kein "IF NOT EXISTS", daher try/except.
+        for migration in (
+            "ALTER TABLE tickets ADD COLUMN customer_label TEXT",
+            "ALTER TABLE tickets ADD COLUMN source_document TEXT",
+            "ALTER TABLE tickets ADD COLUMN chunk_index INTEGER",
+            "ALTER TABLE tickets ADD COLUMN chunk_total INTEGER",
+        ):
+            try:
+                conn.execute(migration)
+            except sqlite3.OperationalError:
+                pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 username TEXT PRIMARY KEY,
@@ -73,12 +79,15 @@ def init_db(path: str = None) -> None:
 
 
 def save_ticket(ticket_id, text: str, vector: np.ndarray, allowed_roles: list,
-                 tenant_id: str, customer_label: str = None, path: str = None) -> None:
+                 tenant_id: str, customer_label: str = None, source_document: str = None,
+                 chunk_index: int = None, chunk_total: int = None, path: str = None) -> None:
     with _connect(path) as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO tickets (id, text, vector, allowed_roles, tenant_id, customer_label) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (ticket_id, text, json.dumps(vector.tolist()), json.dumps(allowed_roles), tenant_id, customer_label),
+            "INSERT OR REPLACE INTO tickets "
+            "(id, text, vector, allowed_roles, tenant_id, customer_label, source_document, chunk_index, chunk_total) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (ticket_id, text, json.dumps(vector.tolist()), json.dumps(allowed_roles), tenant_id,
+             customer_label, source_document, chunk_index, chunk_total),
         )
 
 
@@ -93,7 +102,8 @@ def next_ticket_id(path: str = None) -> int:
 def load_tickets(path: str = None) -> list:
     with _connect(path) as conn:
         rows = conn.execute(
-            "SELECT id, text, vector, allowed_roles, tenant_id, customer_label FROM tickets"
+            "SELECT id, text, vector, allowed_roles, tenant_id, customer_label, "
+            "source_document, chunk_index, chunk_total FROM tickets"
         ).fetchall()
     return [
         {
@@ -103,6 +113,9 @@ def load_tickets(path: str = None) -> list:
             "allowed_roles": json.loads(row[3]),
             "tenant_id": row[4],
             "customer_label": row[5],
+            "source_document": row[6],
+            "chunk_index": row[7],
+            "chunk_total": row[8],
         }
         for row in rows
     ]

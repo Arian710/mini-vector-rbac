@@ -45,7 +45,8 @@ class MiniVectorDB:
         self._embedder = embedder or HashingEmbedder()
         self._entries = []  # jeder Eintrag: {"id", "text", "vector", "allowed_roles", "tenant_id"}
 
-    def add(self, ticket_id, text: str, allowed_roles: list, tenant_id: str, customer_label: str = None) -> None:
+    def add(self, ticket_id, text: str, allowed_roles: list, tenant_id: str, customer_label: str = None,
+            source_document: str = None, chunk_index: int = None, chunk_total: int = None) -> None:
         """
         Fuegt ein Dokument zur Datenbank hinzu.
 
@@ -55,7 +56,10 @@ class MiniVectorDB:
         Rolle INNERHALB DESSELBEN TENANTS darf dieses Dokument sehen - niemals
         tenant-uebergreifend. customer_label ist reine Organisations-Metadaten
         (z.B. "Kunde Mueller GmbH") - NIE eine Sicherheitsgrenze, das bleibt
-        allein tenant_id/allowed_roles vorbehalten.
+        allein tenant_id/allowed_roles vorbehalten. source_document/chunk_index/
+        chunk_total markieren Eintraege, die aus einem langen, in mehrere
+        Abschnitte aufgeteilten Upload stammen (siehe documents.chunk_text) -
+        bei kurzen Dokumenten bleiben sie None.
         """
         vector = self._embedder.embed(text)
         self._entries.append({
@@ -65,10 +69,14 @@ class MiniVectorDB:
             "allowed_roles": allowed_roles,
             "tenant_id": tenant_id,
             "customer_label": customer_label,
+            "source_document": source_document,
+            "chunk_index": chunk_index,
+            "chunk_total": chunk_total,
         })
 
     def load_entry(self, ticket_id, text: str, vector: np.ndarray, allowed_roles: list, tenant_id: str,
-                    customer_label: str = None) -> None:
+                    customer_label: str = None, source_document: str = None,
+                    chunk_index: int = None, chunk_total: int = None) -> None:
         """
         Fuegt einen Eintrag mit BEREITS BERECHNETEM Vektor hinzu, z.B. beim
         Start aus der persistenten Datenbank geladen - ruft den Embedder NICHT
@@ -82,6 +90,9 @@ class MiniVectorDB:
             "allowed_roles": allowed_roles,
             "tenant_id": tenant_id,
             "customer_label": customer_label,
+            "source_document": source_document,
+            "chunk_index": chunk_index,
+            "chunk_total": chunk_total,
         })
 
     def __len__(self) -> int:
@@ -141,7 +152,14 @@ class MiniVectorDB:
         scored.sort(key=lambda pair: pair[0], reverse=True)
 
         return [
-            {"id": entry["id"], "text": entry["text"], "score": round(score, 4)}
+            {
+                "id": entry["id"],
+                "text": entry["text"],
+                "score": round(score, 4),
+                "source_document": entry.get("source_document"),
+                "chunk_index": entry.get("chunk_index"),
+                "chunk_total": entry.get("chunk_total"),
+            }
             for score, entry in scored[:top_k]
         ]
 
@@ -169,6 +187,7 @@ class MiniVectorDB:
                 "text": entry["text"],
                 "restricted": "all" not in entry["allowed_roles"],
                 "customer_label": entry.get("customer_label"),
+                "source_document": entry.get("source_document"),
             }
             for entry in entries
         ]

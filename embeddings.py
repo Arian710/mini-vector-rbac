@@ -14,6 +14,7 @@ auszugeben oder eine Internetverbindung zu brauchen.
 import hashlib
 import os
 import re
+import time
 from abc import ABC, abstractmethod
 
 import numpy as np
@@ -81,20 +82,33 @@ class AzureOpenAIEmbedder(Embedder):
         self.api_key = api_key or os.environ["AZURE_OPENAI_API_KEY"]
         self.deployment = deployment or os.environ["AZURE_OPENAI_EMBEDDING_DEPLOYMENT"]
 
+    MAX_RETRIES = 3
+
     def embed(self, text: str) -> np.ndarray:
         url = (
             f"{self.endpoint}/openai/deployments/{self.deployment}"
             f"/embeddings?api-version={self.API_VERSION}"
         )
-        response = requests.post(
-            url,
-            headers={"api-key": self.api_key, "Content-Type": "application/json"},
-            json={"input": text},
-            timeout=30,
-        )
-        response.raise_for_status()
-        embedding = response.json()["data"][0]["embedding"]
-        return np.array(embedding)
+
+        for attempt in range(self.MAX_RETRIES):
+            response = requests.post(
+                url,
+                headers={"api-key": self.api_key, "Content-Type": "application/json"},
+                json={"input": text},
+                timeout=30,
+            )
+            # 429 = Rate-Limit ueberschritten (bei knapper Deployment-Kapazitaet
+            # schon bei wenigen Anfragen kurz hintereinander moeglich) - kurz
+            # warten und erneut versuchen, statt den Request sofort scheitern
+            # zu lassen. Respektiert Azure's eigene Retry-After-Angabe, falls
+            # vorhanden, sonst exponentielles Backoff (1s, 2s, 4s).
+            if response.status_code == 429 and attempt < self.MAX_RETRIES - 1:
+                wait_seconds = int(response.headers.get("Retry-After", 2 ** attempt))
+                time.sleep(wait_seconds)
+                continue
+            response.raise_for_status()
+            embedding = response.json()["data"][0]["embedding"]
+            return np.array(embedding)
 
 
 def get_default_embedder() -> Embedder:

@@ -11,18 +11,18 @@ export default function Upload() {
   const handleSessionExpiry = useSessionExpiry();
   const [file, setFile] = useState(null);
   const [customerLabel, setCustomerLabel] = useState("");
-  const [suggestion, setSuggestion] = useState(null); // {text, suggested_role, reasons}
+  const [suggestion, setSuggestion] = useState(null); // {text, suggested_role, reasons, chunk_count}
   const [chosenRole, setChosenRole] = useState("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [savedId, setSavedId] = useState(null);
+  const [saveResult, setSaveResult] = useState(null); // {ids, chunk_count}
 
   async function handleAnalyze(event) {
     event.preventDefault();
     if (!file) return;
     setLoading(true);
     setError(null);
-    setSavedId(null);
+    setSaveResult(null);
     try {
       const result = await suggestDocument(token, file);
       setSuggestion(result);
@@ -42,8 +42,9 @@ export default function Upload() {
         text: suggestion.text,
         allowedRole: chosenRole,
         customerLabel,
+        sourceDocumentName: file?.name,
       });
-      setSavedId(result.id);
+      setSaveResult(result);
       setSuggestion(null);
       setFile(null);
       setCustomerLabel("");
@@ -89,9 +90,11 @@ export default function Upload() {
 
         {error && <div style={styles.error}>{error}</div>}
 
-        {savedId && (
+        {saveResult && (
           <div style={styles.success}>
-            Dokument #{savedId} gespeichert und sofort durchsuchbar (Rolle: {ROLE_LABELS[chosenRole]}).
+            {saveResult.chunk_count > 1
+              ? `Dokument in ${saveResult.chunk_count} Abschnitte gespeichert und sofort durchsuchbar (IDs ${saveResult.ids[0]}–${saveResult.ids[saveResult.ids.length - 1]}, Rolle: ${ROLE_LABELS[saveResult.allowed_role]}).`
+              : `Dokument #${saveResult.ids[0]} gespeichert und sofort durchsuchbar (Rolle: ${ROLE_LABELS[saveResult.allowed_role]}).`}
           </div>
         )}
 
@@ -99,6 +102,13 @@ export default function Upload() {
           <div style={styles.card}>
             <h3 style={styles.cardTitle}>Extrahierter Text</h3>
             <div style={styles.textPreview}>{suggestion.text}</div>
+
+            {suggestion.chunk_count > 1 && (
+              <div style={styles.notice}>
+                Dokument ist lang &mdash; wird beim Speichern automatisch in {suggestion.chunk_count} durchsuchbare
+                Abschnitte aufgeteilt (jeder einzeln eingebettet), statt als ein einziges, zu großes Dokument.
+              </div>
+            )}
 
             <div style={styles.suggestionBox}>
               <div style={styles.suggestionHeader}>
@@ -237,6 +247,14 @@ const styles = {
     padding: "10px 14px",
     borderRadius: "var(--radius-sm)",
     fontSize: 13,
+  },
+  notice: {
+    background: "var(--bg)",
+    border: "1px solid var(--rule)",
+    color: "var(--muted)",
+    padding: "10px 14px",
+    borderRadius: "var(--radius-sm)",
+    fontSize: 12,
   },
   success: {
     background: "var(--support-pale)",

@@ -10,7 +10,16 @@ export default function ResultList({ results }) {
     <div style={styles.list}>
       {results.map((r) => (
         <div key={r.id} style={styles.card}>
-          <div style={styles.score}>Score: {r.score}</div>
+          <div style={styles.score}>
+            Score: {r.score}
+            {r.source_document && (
+              <span style={styles.source}>
+                {" "}
+                &middot; {r.source_document}
+                {r.chunk_total > 1 && ` (Abschnitt ${r.chunk_index}/${r.chunk_total})`}
+              </span>
+            )}
+          </div>
           <div style={styles.text}>{r.text}</div>
         </div>
       ))}
@@ -34,6 +43,7 @@ const styles = {
     marginBottom: 4,
   },
   text: { fontSize: 15 },
+  source: { fontStyle: "italic" },
   empty: {
     color: "var(--muted)",
     fontStyle: "italic",

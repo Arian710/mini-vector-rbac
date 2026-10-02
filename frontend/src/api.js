@@ -48,14 +48,19 @@ export async function suggestDocument(token, file) {
   return parseOrThrow(response);
 }
 
-export async function saveDocument(token, { text, allowedRole, customerLabel }) {
+export async function saveDocument(token, { text, allowedRole, customerLabel, sourceDocumentName }) {
   const response = await fetch(`${BASE_URL}/documents`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ text, allowed_role: allowedRole, customer_label: customerLabel || null }),
+    body: JSON.stringify({
+      text,
+      allowed_role: allowedRole,
+      customer_label: customerLabel || null,
+      source_document_name: sourceDocumentName || null,
+    }),
   });
   return parseOrThrow(response);
 }

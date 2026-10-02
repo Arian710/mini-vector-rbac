@@ -29,6 +29,7 @@ except ImportError:
 from typing import List, Optional
 
 import jwt
+import requests
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -64,7 +65,8 @@ storage.init_db()
 db = MiniVectorDB(embedder=get_default_embedder())
 for _ticket in storage.load_tickets():
     db.load_entry(_ticket["id"], _ticket["text"], _ticket["vector"],
-                   _ticket["allowed_roles"], _ticket["tenant_id"])
+                   _ticket["allowed_roles"], _ticket["tenant_id"], _ticket["customer_label"],
+                   _ticket["source_document"], _ticket["chunk_index"], _ticket["chunk_total"])
 
 _security = HTTPBearer()
 
@@ -88,6 +90,9 @@ class SearchResult(BaseModel):
     id: int
     text: str
     score: float
+    source_document: Optional[str] = None
+    chunk_index: Optional[int] = None
+    chunk_total: Optional[int] = None
 
 
 class AuditLogEntry(BaseModel):
@@ -102,6 +107,7 @@ class GraphNode(BaseModel):
     text: str
     restricted: bool
     customer_label: Optional[str] = None
+    source_document: Optional[str] = None
 
 
 class GraphEdge(BaseModel):
@@ -119,16 +125,19 @@ class SuggestResponse(BaseModel):
     text: str
     suggested_role: str
     reasons: List[str]
+    chunk_count: int  # wie viele Abschnitte beim Speichern entstehen (1 = kein Chunking noetig)
 
 
 class SaveDocumentRequest(BaseModel):
     text: str
     allowed_role: str  # "all" oder "management" - vom Menschen bestaetigt/gewaehlt
     customer_label: Optional[str] = None
+    source_document_name: Optional[str] = None  # z.B. der urspruengliche Dateiname
 
 
 class SaveDocumentResponse(BaseModel):
-    id: int
+    ids: List[int]
+    chunk_count: int
     allowed_role: str
 
 
@@ -147,6 +156,21 @@ def require_management(current_user: dict = Depends(get_current_user)) -> dict:
     if current_user["role"] != "management":
         raise HTTPException(status_code=403, detail="Nur für die Rolle management sichtbar")
     return current_user
+
+
+def _safe_embed(text: str):
+    """Wrappt db.embed() mit einer verstaendlichen Fehlermeldung statt einer
+    rohen 500er-Antwort - ohne das wuerde ein Azure-Ausfall (Rate-Limit,
+    Timeout, Netzwerk) im Browser nur als nicht-greifbares "Failed to fetch"
+    ankommen, weil eine unbehandelte Exception die CORS-Header der Antwort
+    verliert und der Browser den eigentlichen Fehler nicht mehr zeigt."""
+    try:
+        return db.embed(text)
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Embedding-Dienst momentan nicht erreichbar, bitte kurz erneut versuchen ({e}).",
+        )
 
 
 @app.get("/health")
@@ -172,12 +196,18 @@ def login(request: LoginRequest):
 
 @app.post("/search", response_model=List[SearchResult])
 def search(request: SearchRequest, current_user: dict = Depends(get_current_user)):
-    results = db.search(
-        request.query,
-        role=current_user["role"],
-        tenant_id=current_user["tenant_id"],
-        top_k=request.top_k,
-    )
+    try:
+        results = db.search(
+            request.query,
+            role=current_user["role"],
+            tenant_id=current_user["tenant_id"],
+            top_k=request.top_k,
+        )
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Embedding-Dienst momentan nicht erreichbar, bitte kurz erneut versuchen ({e}).",
+        )
     storage.log_search(current_user["username"], current_user["tenant_id"], request.query, len(results))
     return results
 
@@ -204,11 +234,17 @@ def suggest_document(
     except documents.UnsupportedFileType as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    vector = db.embed(text)
+    chunks = documents.chunk_text(text)
+    # Fuer den Rollenvorschlag reicht ein repraesentativer Vektor (der erste
+    # Abschnitt) - die Keyword-Heuristik in role_suggestion.py scannt trotzdem
+    # den VOLLEN Text, nur die Embedding-Aehnlichkeit basiert auf Abschnitt 1.
+    # Beim tatsaechlichen Speichern (save_document) wird JEDER Abschnitt einzeln
+    # eingebettet, hier geht es nur um eine schnelle Vorschau.
+    vector = _safe_embed(chunks[0])
     tenant_entries = db.entries_for_tenant(current_user["tenant_id"])
     suggestion = role_suggestion.suggest_role(text, vector, tenant_entries)
 
-    return SuggestResponse(text=text, **suggestion)
+    return SuggestResponse(text=text, chunk_count=len(chunks), **suggestion)
 
 
 @app.post("/documents", response_model=SaveDocumentResponse)
@@ -222,18 +258,28 @@ def save_document(
     if request.allowed_role not in ("all", "management"):
         raise HTTPException(status_code=422, detail="allowed_role muss 'all' oder 'management' sein")
 
-    new_id = storage.next_ticket_id()
-    vector = db.embed(request.text)
     allowed_roles = [request.allowed_role]
     tenant_id = current_user["tenant_id"]
 
-    storage.save_ticket(new_id, request.text, vector, allowed_roles, tenant_id, request.customer_label)
-    # load_entry statt add(): der Vektor wurde oben schon berechnet (fuer die
-    # Speicherung) - load_entry nutzt ihn direkt, statt beim Azure-Embedder ein
-    # zweites Mal (und ein zweites Mal kostenpflichtig) nachzufragen.
-    db.load_entry(new_id, request.text, vector, allowed_roles, tenant_id, request.customer_label)
+    chunks = documents.chunk_text(request.text)
+    chunk_total = len(chunks) if len(chunks) > 1 else None  # None = kein Chunking noetig/erfolgt
+    ids = []
 
-    return SaveDocumentResponse(id=new_id, allowed_role=request.allowed_role)
+    for i, chunk in enumerate(chunks, start=1):
+        new_id = storage.next_ticket_id()
+        vector = _safe_embed(chunk)
+        chunk_index = i if chunk_total else None
+
+        storage.save_ticket(new_id, chunk, vector, allowed_roles, tenant_id, request.customer_label,
+                             request.source_document_name, chunk_index, chunk_total)
+        # load_entry statt add(): der Vektor wurde oben schon berechnet - load_entry
+        # nutzt ihn direkt, statt beim Azure-Embedder ein zweites Mal (und ein
+        # zweites Mal kostenpflichtig) nachzufragen.
+        db.load_entry(new_id, chunk, vector, allowed_roles, tenant_id, request.customer_label,
+                       request.source_document_name, chunk_index, chunk_total)
+        ids.append(new_id)
+
+    return SaveDocumentResponse(ids=ids, chunk_count=len(chunks), allowed_role=request.allowed_role)
 
 
 @app.get("/audit-log", response_model=List[AuditLogEntry])

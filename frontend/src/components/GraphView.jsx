@@ -37,14 +37,20 @@ export default function GraphView() {
         setNodeCount(data.nodes.length);
 
         const nodes = new DataSet(
-          data.nodes.map((n) => ({
-            id: n.id,
-            label: truncate(n.text),
-            title: n.customer_label ? `${n.text}\n\nKunde: ${n.customer_label}` : n.text,
-            color: n.restricted
-              ? { background: "#b4551f", border: "#8a3f14", highlight: { background: "#8a3f14", border: "#8a3f14" } }
-              : { background: "#0f6e56", border: "#0a4536", highlight: { background: "#0a4536", border: "#0a4536" } },
-          }))
+          data.nodes.map((n) => {
+            const extras = [
+              n.customer_label && `Kunde: ${n.customer_label}`,
+              n.source_document && `Quelle: ${n.source_document}`,
+            ].filter(Boolean);
+            return {
+              id: n.id,
+              label: truncate(n.text),
+              title: extras.length ? `${n.text}\n\n${extras.join("\n")}` : n.text,
+              color: n.restricted
+                ? { background: "#b4551f", border: "#8a3f14", highlight: { background: "#8a3f14", border: "#8a3f14" } }
+                : { background: "#0f6e56", border: "#0a4536", highlight: { background: "#0a4536", border: "#0a4536" } },
+            };
+          })
         );
         const edges = new DataSet(
           data.edges.map((e, i) => ({
