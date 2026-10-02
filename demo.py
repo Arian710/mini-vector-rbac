@@ -40,8 +40,9 @@ DEMO_HTML = """<!doctype html>
 <div class="sub">Dieselbe Suche, zwei Rollen &mdash; jeder sieht nur, wofuer er berechtigt ist.</div>
 
 <div class="searchbar">
-  <input type="text" id="q" value="Gehaltserhoehung Budget Quartal">
-  <button onclick="runSearch()">Suchen</button>
+  <input type="text" id="q" value="Gehaltserhoehung Budget Quartal"
+         onkeydown="if(event.key==='Enter'){event.preventDefault(); runSearch();}">
+  <button type="button" onclick="runSearch()">Suchen</button>
 </div>
 
 <div class="cols">
