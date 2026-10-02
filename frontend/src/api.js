@@ -9,7 +9,9 @@ async function parseOrThrow(response) {
     } catch {
       // keine JSON-Antwort, bleib beim statusText
     }
-    throw new Error(detail);
+    const error = new Error(detail);
+    error.status = response.status;
+    throw error;
   }
   return response.json();
 }

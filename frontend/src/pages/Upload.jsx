@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useSessionExpiry } from "../hooks/useSessionExpiry";
 import { suggestDocument, saveDocument } from "../api";
 import Layout from "../components/Layout";
 
@@ -7,6 +8,7 @@ const ROLE_LABELS = { all: "Alle Rollen", management: "Nur Management" };
 
 export default function Upload() {
   const { token } = useAuth();
+  const handleSessionExpiry = useSessionExpiry();
   const [file, setFile] = useState(null);
   const [customerLabel, setCustomerLabel] = useState("");
   const [suggestion, setSuggestion] = useState(null); // {text, suggested_role, reasons}
@@ -26,7 +28,7 @@ export default function Upload() {
       setSuggestion(result);
       setChosenRole(result.suggested_role);
     } catch (err) {
-      setError(err.message);
+      if (!handleSessionExpiry(err)) setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -46,7 +48,7 @@ export default function Upload() {
       setFile(null);
       setCustomerLabel("");
     } catch (err) {
-      setError(err.message);
+      if (!handleSessionExpiry(err)) setError(err.message);
     } finally {
       setLoading(false);
     }

@@ -3,6 +3,7 @@ import { Network } from "vis-network";
 import { DataSet } from "vis-data";
 import "vis-network/styles/vis-network.css";
 import { useAuth } from "../context/AuthContext";
+import { useSessionExpiry } from "../hooks/useSessionExpiry";
 import { graphData as fetchGraphData } from "../api";
 
 function truncate(text, max = 30) {
@@ -17,6 +18,7 @@ function truncate(text, max = 30) {
  */
 export default function GraphView() {
   const { token } = useAuth();
+  const handleSessionExpiry = useSessionExpiry();
   const containerRef = useRef(null);
   const networkRef = useRef(null);
   const [loading, setLoading] = useState(true);
@@ -96,7 +98,7 @@ export default function GraphView() {
           network.selectNodes([clicked, ...connected]);
         });
       } catch (err) {
-        if (!cancelled) setError(err.message);
+        if (!cancelled && !handleSessionExpiry(err)) setError(err.message);
       } finally {
         if (!cancelled) setLoading(false);
       }

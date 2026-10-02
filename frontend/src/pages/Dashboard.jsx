@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useSessionExpiry } from "../hooks/useSessionExpiry";
 import { search as apiSearch } from "../api";
 import Layout from "../components/Layout";
 import ResultList from "../components/ResultList";
@@ -7,6 +8,7 @@ import GraphView from "../components/GraphView";
 
 export default function Dashboard() {
   const { token } = useAuth();
+  const handleSessionExpiry = useSessionExpiry();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState(null);
   const [view, setView] = useState("list"); // "list" | "graph"
@@ -22,7 +24,7 @@ export default function Dashboard() {
       const data = await apiSearch(token, query);
       setResults(data);
     } catch (err) {
-      setError(err.message);
+      if (!handleSessionExpiry(err)) setError(err.message);
     } finally {
       setLoading(false);
     }
