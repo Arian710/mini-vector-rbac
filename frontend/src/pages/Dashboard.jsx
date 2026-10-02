@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { search as apiSearch } from "../api";
 import Layout from "../components/Layout";
 import ResultList from "../components/ResultList";
+import GraphView from "../components/GraphView";
 
 export default function Dashboard() {
   const { token } = useAuth();
@@ -60,13 +61,7 @@ export default function Dashboard() {
 
       {error && <div style={styles.error}>{error}</div>}
 
-      {view === "list" ? (
-        <ResultList results={results} />
-      ) : (
-        <div style={styles.graphPlaceholder}>
-          Graph-Ansicht kommt im naechsten Schritt (vis-network).
-        </div>
-      )}
+      {view === "list" ? <ResultList results={results} /> : <GraphView />}
     </Layout>
   );
 }
@@ -120,13 +115,5 @@ const styles = {
     padding: "10px 14px",
     borderRadius: "var(--radius-sm)",
     fontSize: 13,
-  },
-  graphPlaceholder: {
-    color: "var(--muted)",
-    fontStyle: "italic",
-    padding: "60px 16px",
-    textAlign: "center",
-    border: "1px dashed var(--rule)",
-    borderRadius: "var(--radius)",
   },
 };
