@@ -26,15 +26,19 @@ try:
 except ImportError:
     pass
 
+import os
 from typing import List, Optional
 
 import jwt
 import requests
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 import auth
 import documents
@@ -49,6 +53,16 @@ app = FastAPI(
     description="Brute-Force-Vektorsuche mit serverseitig erzwungenem Rollenfilter und echtem JWT-Login.",
     version="2.0.0",
 )
+
+# Rate-Limiting pro IP - verhindert automatisiertes Passwort-Durchprobieren
+# gegen /login. Zaehlt NUR die IP, nicht den Username, damit ein Angreifer
+# nicht durch Rotieren der Zielnamen um das Limit herumkommt.
+# DISABLE_RATE_LIMIT=1 fuer Tests, die bewusst oft hintereinander einloggen
+# (test_tenancy.py/test_audit.py) - setzt die Variable VOR dem Import von api,
+# genau wie beim Azure-Embedder-Test-Fallback (siehe dort fuer die Begruendung).
+limiter = Limiter(key_func=get_remote_address, enabled=os.environ.get("DISABLE_RATE_LIMIT") != "1")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Erlaubt dem React-Dashboard (laeuft im Dev-Modus auf einem anderen Port),
 # die API vom Browser aus anzusprechen. Nur fuer lokale Entwicklung offen.
@@ -203,12 +217,16 @@ def demo_page():
 
 
 @app.post("/login", response_model=TokenResponse)
-def login(request: LoginRequest):
+@limiter.limit("5/minute")
+def login(request: Request, body: LoginRequest):
+    # slowapi erwartet den Parameternamen woertlich "request" fuer das
+    # Starlette-Request-Objekt (liest daraus die Client-IP) - der JSON-Body
+    # heisst deshalb hier "body", nicht wie sonst ueblich "request".
     try:
-        identity = auth.authenticate(request.username, request.password)
+        identity = auth.authenticate(body.username, body.password)
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))
-    token = auth.create_access_token(request.username, identity["role"], identity["tenant_id"])
+    token = auth.create_access_token(body.username, identity["role"], identity["tenant_id"])
     return TokenResponse(access_token=token)
 
 

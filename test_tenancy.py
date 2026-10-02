@@ -14,6 +14,7 @@ Kein Testframework noetig: einfach `python test_tenancy.py` ausfuehren.
 import os
 
 os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-key")
+os.environ["DISABLE_RATE_LIMIT"] = "1"  # dieser Test loggt bewusst oft hintereinander ein
 
 # Erzwingt den HashingEmbedder-Fallback in api.py, UNABHAENGIG davon, ob eine
 # echte .env mit Azure-Zugangsdaten existiert. Leerstring statt pop(): dotenv's

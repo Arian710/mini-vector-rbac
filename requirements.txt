@@ -10,3 +10,4 @@ pypdf
 python-docx
 python-multipart
 tiktoken
+slowapi

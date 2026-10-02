@@ -14,6 +14,7 @@ Echtes Login statt simuliertem Dictionary.
 
 import datetime
 import os
+import re
 
 import bcrypt
 import jwt
@@ -22,6 +23,7 @@ import storage
 
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = 60
+MIN_PASSWORD_LENGTH = 8
 
 
 def _secret_key() -> str:
@@ -37,7 +39,22 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
+def validate_password_strength(password: str) -> None:
+    """Minimal, aber wirksam gegen die haeufigsten schwachen Passwoerter
+    (reine Zahlenfolgen, kurze Woerter) - bewusst nicht uebertrieben streng
+    (keine Pflicht-Sonderzeichen), das schreckt bei kleinen Kanzlei-Teams nur
+    ab und bringt laut aktuellen NIST-Empfehlungen wenig zusaetzlichen Schutz
+    gegenueber ausreichender Laenge."""
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(f"Passwort muss mindestens {MIN_PASSWORD_LENGTH} Zeichen lang sein.")
+    if not re.search(r"[a-zA-Z]", password):
+        raise ValueError("Passwort muss mindestens einen Buchstaben enthalten.")
+    if not re.search(r"[0-9]", password):
+        raise ValueError("Passwort muss mindestens eine Ziffer enthalten.")
+
+
 def register_user(username: str, password: str, role: str, tenant_id: str) -> None:
+    validate_password_strength(password)
     storage.save_user(username, hash_password(password), role, tenant_id)
 
 
