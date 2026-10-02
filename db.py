@@ -82,6 +82,14 @@ class MiniVectorDB:
     def __len__(self) -> int:
         return len(self._entries)
 
+    def _allowed_entries(self, role: str, tenant_id: str) -> list:
+        """Tenant-Filter (haerteste Schranke) dann RBAC-Filter - siehe search()."""
+        same_tenant = [entry for entry in self._entries if entry["tenant_id"] == tenant_id]
+        return [
+            entry for entry in same_tenant
+            if "all" in entry["allowed_roles"] or role in entry["allowed_roles"]
+        ]
+
     def search(self, query: str, role: str, tenant_id: str, top_k: int = 3) -> list:
         """
         Sucht die aehnlichsten Dokumente zu einer Anfrage - aber NUR unter den
@@ -108,15 +116,7 @@ class MiniVectorDB:
         Konzept 3 (Cosine Similarity): der Aehnlichkeitswert pro Eintrag.
         """
         query_vector = self._embedder.embed(query)
-
-        # Tenant-Filter zuerst - haerteste Schranke, keine Ausnahme.
-        same_tenant = [entry for entry in self._entries if entry["tenant_id"] == tenant_id]
-
-        # RBAC-Filter danach, innerhalb des eigenen Tenants.
-        allowed_entries = [
-            entry for entry in same_tenant
-            if "all" in entry["allowed_roles"] or role in entry["allowed_roles"]
-        ]
+        allowed_entries = self._allowed_entries(role, tenant_id)
 
         scored = [
             (cosine_similarity(query_vector, entry["vector"]), entry)
@@ -128,3 +128,36 @@ class MiniVectorDB:
             {"id": entry["id"], "text": entry["text"], "score": round(score, 4)}
             for score, entry in scored[:top_k]
         ]
+
+    def graph_data(self, role: str, tenant_id: str, top_neighbors: int = 5) -> dict:
+        """
+        Liefert Knoten+Kanten fuer eine Obsidian-artige Graph-Ansicht - nutzt
+        denselben Tenant-/RBAC-Filter wie search(), damit niemand ein Dokument
+        auch nur als Punkt im Graph sieht, das er nicht lesen duerfte.
+
+        WICHTIG fuer die Skalierung (siehe Feature-Backlog): bei vielen
+        Dokumenten pro Tenant waere ein VOLLSTAENDIGER Graph (jeder mit jedem)
+        O(n^2) Kanten - bei 1000 Dokumenten also bis zu ~500.000. Stattdessen
+        bekommt jeder Knoten nur seine `top_neighbors` aehnlichsten Nachbarn,
+        das haelt den Graph unabhaengig von der Tenant-Groesse renderbar.
+        """
+        entries = self._allowed_entries(role, tenant_id)
+        nodes = [{"id": entry["id"], "text": entry["text"]} for entry in entries]
+
+        best_weight = {}
+        for entry in entries:
+            similarities = [
+                (cosine_similarity(entry["vector"], other["vector"]), other["id"])
+                for other in entries if other["id"] != entry["id"]
+            ]
+            similarities.sort(key=lambda pair: pair[0], reverse=True)
+            for score, other_id in similarities[:top_neighbors]:
+                key = frozenset((entry["id"], other_id))
+                if key not in best_weight or score > best_weight[key]:
+                    best_weight[key] = score
+
+        edges = [
+            {"source": min(pair), "target": max(pair), "weight": round(weight, 4)}
+            for pair, weight in best_weight.items()
+        ]
+        return {"nodes": nodes, "edges": edges}

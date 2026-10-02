@@ -30,6 +30,7 @@ from typing import List
 
 import jwt
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
@@ -44,6 +45,15 @@ app = FastAPI(
     title="Mini Vector DB mit RBAC",
     description="Brute-Force-Vektorsuche mit serverseitig erzwungenem Rollenfilter und echtem JWT-Login.",
     version="2.0.0",
+)
+
+# Erlaubt dem React-Dashboard (laeuft im Dev-Modus auf einem anderen Port),
+# die API vom Browser aus anzusprechen. Nur fuer lokale Entwicklung offen.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 storage.init_db()
@@ -83,6 +93,22 @@ class AuditLogEntry(BaseModel):
     query: str
     result_count: int
     created_at: str
+
+
+class GraphNode(BaseModel):
+    id: int
+    text: str
+
+
+class GraphEdge(BaseModel):
+    source: int
+    target: int
+    weight: float
+
+
+class GraphResponse(BaseModel):
+    nodes: List[GraphNode]
+    edges: List[GraphEdge]
 
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(_security)) -> dict:
@@ -133,6 +159,12 @@ def search(request: SearchRequest, current_user: dict = Depends(get_current_user
     )
     storage.log_search(current_user["username"], current_user["tenant_id"], request.query, len(results))
     return results
+
+
+@app.get("/graph-data", response_model=GraphResponse)
+def graph_data(current_user: dict = Depends(get_current_user)):
+    """Knoten+Kanten fuer die Graph-Ansicht - derselbe Tenant-/RBAC-Filter wie /search."""
+    return db.graph_data(role=current_user["role"], tenant_id=current_user["tenant_id"])
 
 
 @app.get("/audit-log", response_model=List[AuditLogEntry])
