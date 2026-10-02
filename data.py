@@ -106,4 +106,55 @@ TICKETS = [
         "text": "Gehaltserhoehung fuer das Team ab naechstem Quartal beschlossen, 15 Prozent mehr Budget.",
         "allowed_roles": ["management"],
     },
+
+    # --- Erweiterung kanzlei-mueller: drei sichtbare Themen-Cluster fuer
+    #     die Graph-Visualisierung (Konzept: Obsidian-artig) ---------------
+
+    # Cluster "IT-Probleme" (ergaenzt Tickets 1,2,4,6)
+    {
+        "id": 16,
+        "tenant_id": "kanzlei-mueller",
+        "text": "Monitor im Besprechungsraum zeigt kein Bild mehr, HDMI-Kabel vermutlich defekt.",
+        "allowed_roles": ["all"],
+    },
+    {
+        "id": 17,
+        "tenant_id": "kanzlei-mueller",
+        "text": "VPN-Verbindung fuer Homeoffice-Mitarbeiter bricht nach wenigen Minuten ab.",
+        "allowed_roles": ["all"],
+    },
+    {
+        "id": 18,
+        "tenant_id": "kanzlei-mueller",
+        "text": "Telefonanlage hat seit dem letzten Update Aussetzer bei eingehenden Anrufen.",
+        "allowed_roles": ["all"],
+    },
+
+    # Cluster "Finance/HR vertraulich" (ergaenzt Tickets 8,9,10,11)
+    {
+        "id": 19,
+        "tenant_id": "kanzlei-mueller",
+        "text": "Bonuszahlungen fuer das Management-Team wurden dieses Quartal um 10 Prozent gekuerzt, vertraulich behandeln.",
+        "allowed_roles": ["management"],
+    },
+    {
+        "id": 20,
+        "tenant_id": "kanzlei-mueller",
+        "text": "Gespraech mit Grossinvestor terminiert, Inhalte streng vertraulich bis zur Bekanntgabe.",
+        "allowed_roles": ["management"],
+    },
+
+    # Cluster "Marketing" (komplett neues Thema, eigener Cluster)
+    {
+        "id": 21,
+        "tenant_id": "kanzlei-mueller",
+        "text": "Neue Social-Media-Kampagne startet naechste Woche, Content-Plan liegt vor.",
+        "allowed_roles": ["all"],
+    },
+    {
+        "id": 22,
+        "tenant_id": "kanzlei-mueller",
+        "text": "Influencer-Kooperation fuer den Produktlaunch wird verhandelt, erste Angebote liegen vor.",
+        "allowed_roles": ["all"],
+    },
 ]

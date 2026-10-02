@@ -18,8 +18,8 @@ from embeddings import HashingEmbedder
 TENANT_A = "kanzlei-mueller"
 TENANT_B = "steuerberatung-schmidt"
 
-MANAGEMENT_ONLY_IDS_A = {8, 9, 10, 11}
-ALL_VISIBLE_IDS_A = {1, 2, 3, 4, 5, 6, 7}
+MANAGEMENT_ONLY_IDS_A = {8, 9, 10, 11, 19, 20}
+ALL_VISIBLE_IDS_A = {1, 2, 3, 4, 5, 6, 7, 16, 17, 18, 21, 22}
 
 
 def build_database() -> MiniVectorDB:
