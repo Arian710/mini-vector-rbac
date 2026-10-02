@@ -43,8 +43,9 @@ kostenlosen `HashingEmbedder` weiter.
   und sensiblen Finanz-/HR-Tickets (`allowed_roles=["management"]`)
 - `auth.py` – echtes Login: bcrypt-Passwort-Hashing, JWT-Erzeugung und -Prüfung
   (Token enthält Username, Rolle UND `tenant_id`)
-- `storage.py` – SQLite-Persistenz (Tickets inkl. Vektor und Tenant, User inkl.
-  Tenant, Such-Protokoll inkl. Tenant); komplett getrennt von der Suchlogik in `db.py`
+- `storage.py` – Azure-Postgres-Persistenz (Tickets inkl. Vektor und Tenant, User
+  inkl. Tenant, Such-Protokoll inkl. Tenant, Rollen pro Tenant); komplett getrennt
+  von der Suchlogik in `db.py`
 - `embeddings.py` – Embedder-Abstraktion: `HashingEmbedder` (kostenloser,
   deterministischer Platzhalter) und `AzureOpenAIEmbedder` (echtes, trainiertes
   Modell über die Azure-OpenAI-API); `get_default_embedder()` wählt automatisch
@@ -57,7 +58,7 @@ kostenlosen `HashingEmbedder` weiter.
   im `Authorization`-Header, `/audit-log` zusätzlich nur für Rolle `management`
   (und nur das Protokoll des eigenen Mandanten). Username, Rolle und Tenant
   kommen ausschließlich aus dem geprüften Token, nie aus dem Request-Body
-- `seed_data.py` – befüllt die SQLite-Datenbank einmalig mit Beispiel-Tickets
+- `seed_data.py` – befüllt die Postgres-Datenbank einmalig mit Beispiel-Tickets
   und Demo-Usern für beide Mandanten
 - `test_rbac.py` – beweist Rollen- und Tenant-Trennung auf Engine-Ebene, auch
   wenn ein sensibles Ticket inhaltlich der beste Treffer wäre oder ein anderer

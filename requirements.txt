@@ -11,3 +11,4 @@ python-docx
 python-multipart
 tiktoken
 slowapi
+psycopg2-binary

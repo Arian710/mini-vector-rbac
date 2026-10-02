@@ -5,12 +5,15 @@ Teil 1: Passwort-Staerke-Regeln (auth.validate_password_strength).
 Teil 2: Rate-Limiting auf /login - bewusst NICHT deaktiviert (anders als die
 anderen API-Tests), weil genau das hier getestet werden soll.
 
-Nutzt eine eigene, temporaere SQLite-Datei statt der echten vector_rbac.db.
+Nutzt ein eigenes Postgres-Schema statt der echten vector_rbac-Daten.
 
 Kein Testframework noetig: einfach `python test_security.py` ausfuehren.
 """
 
 import os
+
+from dotenv import load_dotenv
+load_dotenv()  # Postgres-Zugangsdaten (AZURE_POSTGRES_*) kommen aus .env
 
 os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-key")
 
@@ -19,14 +22,13 @@ for _azure_var in ("AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY", "AZURE_OPENA
 
 import storage
 
-storage.DB_PATH = "test_security.db"
+storage.PG_SCHEMA = "test_security"
 
 import auth
 
 
 def setup_module():
-    if os.path.exists(storage.DB_PATH):
-        os.remove(storage.DB_PATH)
+    storage.drop_schema(storage.PG_SCHEMA)
     storage.init_db()
     auth.register_user("secuser", "demo1234", "support", "firma-security-test")
 
@@ -99,3 +101,4 @@ if __name__ == "__main__":
         test()
         print(f"OK: {test.__name__}")
     print(f"\nAlle {len(TESTS)} Tests bestanden.")
+    storage.drop_schema(storage.PG_SCHEMA)

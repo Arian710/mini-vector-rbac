@@ -1,7 +1,7 @@
 """
 Einfache, assert-basierte Tests für auth.py: Passwort-Hashing und JWT.
 
-Nutzt eine eigene, temporäre SQLite-Datei statt der echten vector_rbac.db,
+Nutzt ein eigenes Postgres-Schema statt der echten vector_rbac-Daten,
 damit Testläufe die echten Demo-Daten nicht überschreiben.
 
 Kein Testframework nötig: einfach `python test_auth.py` ausführen.
@@ -9,18 +9,20 @@ Kein Testframework nötig: einfach `python test_auth.py` ausführen.
 
 import os
 
+from dotenv import load_dotenv
+load_dotenv()  # Postgres-Zugangsdaten (AZURE_POSTGRES_*) kommen aus .env
+
 os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-key")
 
 import storage
 
-storage.DB_PATH = "test_auth.db"
+storage.PG_SCHEMA = "test_auth"
 
 import auth
 
 
 def setup_module():
-    if os.path.exists(storage.DB_PATH):
-        os.remove(storage.DB_PATH)
+    storage.drop_schema(storage.PG_SCHEMA)
     storage.init_db()
 
 
@@ -79,4 +81,4 @@ if __name__ == "__main__":
         test()
         print(f"OK: {test.__name__}")
     print(f"\nAlle {len(TESTS)} Tests bestanden.")
-    os.remove(storage.DB_PATH)
+    storage.drop_schema(storage.PG_SCHEMA)

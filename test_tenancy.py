@@ -6,12 +6,15 @@ Beweist das Kernszenario: zwei Mandanten, in jedem ein User mit der Rolle
 NUR sein eigenes Ticket, nie das des anderen Mandanten, obwohl Rolle und
 Textaehnlichkeit identisch waeren.
 
-Nutzt eine eigene, temporaere SQLite-Datei statt der echten vector_rbac.db.
+Nutzt ein eigenes Postgres-Schema statt der echten vector_rbac-Daten.
 
 Kein Testframework noetig: einfach `python test_tenancy.py` ausfuehren.
 """
 
 import os
+
+from dotenv import load_dotenv
+load_dotenv()  # Postgres-Zugangsdaten (AZURE_POSTGRES_*) kommen aus .env
 
 os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-key")
 os.environ["DISABLE_RATE_LIMIT"] = "1"  # dieser Test loggt bewusst oft hintereinander ein
@@ -28,7 +31,7 @@ for _azure_var in ("AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY", "AZURE_OPENA
 
 import storage
 
-storage.DB_PATH = "test_tenancy.db"
+storage.PG_SCHEMA = "test_tenancy"
 
 import auth
 from data import TICKETS
@@ -39,8 +42,7 @@ TENANT_B = "steuerberatung-schmidt"
 
 
 def setup_module():
-    if os.path.exists(storage.DB_PATH):
-        os.remove(storage.DB_PATH)
+    storage.drop_schema(storage.PG_SCHEMA)
     storage.init_db()
     auth.register_user("anna", "demo1234", "support", TENANT_A)
     auth.register_user("bernd", "demo1234", "management", TENANT_A)
@@ -143,4 +145,4 @@ if __name__ == "__main__":
         test()
         print(f"OK: {test.__name__}")
     print(f"\nAlle {len(TESTS)} Tests bestanden.")
-    os.remove(storage.DB_PATH)
+    storage.drop_schema(storage.PG_SCHEMA)

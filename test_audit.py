@@ -8,12 +8,15 @@ Teil 2 prueft die echte API-Autorisierung ueber FastAPI's TestClient:
   - 'management' bekommt 200 und sieht den Log-Eintrag der zuvor von
     'support' ausgefuehrten Suche
 
-Nutzt eine eigene, temporaere SQLite-Datei statt der echten vector_rbac.db.
+Nutzt ein eigenes Postgres-Schema statt der echten vector_rbac-Daten.
 
 Kein Testframework noetig: einfach `python test_audit.py` ausfuehren.
 """
 
 import os
+
+from dotenv import load_dotenv
+load_dotenv()  # Postgres-Zugangsdaten (AZURE_POSTGRES_*) kommen aus .env
 
 os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-key")
 os.environ["DISABLE_RATE_LIMIT"] = "1"  # dieser Test loggt bewusst oft hintereinander ein
@@ -26,7 +29,7 @@ for _azure_var in ("AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY", "AZURE_OPENA
 
 import storage
 
-storage.DB_PATH = "test_audit.db"
+storage.PG_SCHEMA = "test_audit"
 
 import auth
 from data import TICKETS
@@ -37,8 +40,7 @@ TENANT = "kanzlei-mueller"
 
 
 def setup_module():
-    if os.path.exists(storage.DB_PATH):
-        os.remove(storage.DB_PATH)
+    storage.drop_schema(storage.PG_SCHEMA)
     storage.init_db()
     auth.register_user("anna", "demo1234", "support", TENANT)
     auth.register_user("bernd", "demo1234", "management", TENANT)
@@ -111,4 +113,4 @@ if __name__ == "__main__":
         test()
         print(f"OK: {test.__name__}")
     print(f"\nAlle {len(TESTS)} Tests bestanden.")
-    os.remove(storage.DB_PATH)
+    storage.drop_schema(storage.PG_SCHEMA)
