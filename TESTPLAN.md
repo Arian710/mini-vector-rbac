@@ -114,8 +114,11 @@ sobald eine erste Grundversion steht — Zeitpunkt entscheiden wir dann zusammen
 
 | # | Testfall | Typ | Status |
 |---|----------|-----|--------|
-| 9.1 | Komplette Test-Suite (`test_rbac.py`, `test_auth.py`, `test_audit.py`, `test_tenancy.py`) läuft grün | 🤖 | ✅ laufend geprüft |
+| 9.1 | Komplette Test-Suite (`test_rbac.py`, `test_auth.py`, `test_audit.py`, `test_tenancy.py`, `test_security.py`) läuft grün — läuft seit der Postgres-Migration gegen echtes Azure-Postgres, nicht mehr gegen lokale SQLite-Dateien | 🤖 | ✅ laufend geprüft |
 | 9.2 | `python seed_data.py` läuft fehlerfrei auf frischer Datenbank | 🤖 | ✅ geprüft |
+| 9.2b | Login-Rate-Limit (5/Min pro IP) blockiert den 6. Versuch, lässt aber erfolgreiche Logins in neuem Zeitfenster wieder zu | 🤖 `test_security.py` | ✅ geprüft |
+| 9.2c | Passwort-Mindestanforderungen (8+ Zeichen, Buchstabe+Ziffer) werden bei `register_user()` durchgesetzt | 🤖 `test_security.py` | ✅ geprüft |
+| 9.2d | App funktioniert nach Server-Neustart mit persistenten Daten aus Postgres (kein Datenverlust wie es bei SQLite auf App Service passieren würde) | 🤖 manuell nach Neustart verifiziert | ✅ geprüft |
 | 9.3 | App funktioniert nach frischem `git clone` + `pip install -r requirements.txt` + `npm install` ohne manuelle Zusatzschritte außer `.env` befüllen | 👤 Browser (am besten auf einem zweiten Rechner/Mac testen) | ☐ offen |
 | 9.4 | Responsives Verhalten auf kleineren Bildschirmen (Laptop-Breite) ist nutzbar | 👤 Browser | ☐ offen |
 | 9.5 | Kein Secret (Azure-Key, JWT-Secret) taucht in Git-Historie oder in Browser-DevTools-Netzwerk-Tab im Klartext auf (JWT-Payload ist zwar sichtbar, aber unsigniert nicht fälschbar — das ist gewollt) | 👤 Review | ☐ offen |
