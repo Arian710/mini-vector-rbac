@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useSessionExpiry } from "../hooks/useSessionExpiry";
 import { listRoles, createRole, updateRole, deleteRole } from "../api";
+import { ROLE_TEMPLATES } from "../roleTemplates";
 import Layout from "../components/Layout";
 
 export default function Roles() {
@@ -18,6 +19,50 @@ export default function Roles() {
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
+
+  const [industryIndex, setIndustryIndex] = useState(0);
+  const [checkedRoles, setCheckedRoles] = useState(() => new Set(ROLE_TEMPLATES[0].roles.map((r) => r.name)));
+  const [templateStatus, setTemplateStatus] = useState(null);
+
+  function selectIndustry(index) {
+    setIndustryIndex(index);
+    setCheckedRoles(new Set(ROLE_TEMPLATES[index].roles.map((r) => r.name)));
+    setTemplateStatus(null);
+  }
+
+  function toggleTemplateRole(name) {
+    setCheckedRoles((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
+
+  async function handleApplyTemplates() {
+    const toCreate = ROLE_TEMPLATES[industryIndex].roles.filter((r) => checkedRoles.has(r.name));
+    if (toCreate.length === 0) return;
+    setLoading(true);
+    setError(null);
+    let created = 0;
+    let skipped = 0;
+    for (const role of toCreate) {
+      try {
+        await createRole(token, { name: role.name, description: role.description });
+        created++;
+      } catch (err) {
+        if (handleSessionExpiry(err)) return;
+        skipped++; // meist Duplikat (Rolle existiert schon) - naechste trotzdem versuchen
+      }
+    }
+    setTemplateStatus(
+      skipped > 0
+        ? `${created} Rolle(n) angelegt, ${skipped} übersprungen (existierten vermutlich schon).`
+        : `${created} Rolle(n) angelegt.`
+    );
+    await refresh();
+    setLoading(false);
+  }
 
   async function refresh() {
     try {
@@ -96,6 +141,51 @@ export default function Roles() {
         </p>
 
         {error && <div style={styles.error}>{error}</div>}
+
+        <div style={styles.card}>
+          <h3 style={styles.cardTitle}>Branchenvorlage als Starthilfe</h3>
+          <label style={styles.label}>
+            Branche
+            <select
+              value={industryIndex}
+              onChange={(e) => selectIndustry(Number(e.target.value))}
+              style={styles.textInput}
+            >
+              {ROLE_TEMPLATES.map((group, i) => (
+                <option key={group.industry} value={i}>
+                  {group.industry}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div style={styles.templateList}>
+            {ROLE_TEMPLATES[industryIndex].roles.map((role) => (
+              <label key={role.name} style={styles.templateRow}>
+                <input
+                  type="checkbox"
+                  checked={checkedRoles.has(role.name)}
+                  onChange={() => toggleTemplateRole(role.name)}
+                />
+                <div>
+                  <div style={styles.roleName}>{role.name}</div>
+                  <div style={styles.roleDescription}>{role.description}</div>
+                </div>
+              </label>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleApplyTemplates}
+            style={styles.button}
+            disabled={loading || checkedRoles.size === 0}
+          >
+            {loading ? "Übernehme..." : "Ausgewählte übernehmen"}
+          </button>
+
+          {templateStatus && <div style={styles.success}>{templateStatus}</div>}
+        </div>
 
         <form onSubmit={handleCreate} style={styles.card}>
           <h3 style={styles.cardTitle}>Neue Rolle anlegen</h3>
@@ -279,9 +369,26 @@ const styles = {
   rowActions: { display: "flex", gap: 8, flexShrink: 0 },
   editForm: { display: "flex", flexDirection: "column", gap: 8, width: "100%" },
   muted: { color: "var(--muted)", fontSize: 13, fontStyle: "italic" },
+  templateList: { display: "flex", flexDirection: "column", gap: 8 },
+  templateRow: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 10,
+    padding: "8px 10px",
+    border: "1px solid var(--rule)",
+    borderRadius: "var(--radius-sm)",
+    cursor: "pointer",
+  },
   error: {
     background: "var(--mgmt-pale)",
     color: "var(--mgmt)",
+    padding: "10px 14px",
+    borderRadius: "var(--radius-sm)",
+    fontSize: 13,
+  },
+  success: {
+    background: "var(--support-pale)",
+    color: "var(--support)",
     padding: "10px 14px",
     borderRadius: "var(--radius-sm)",
     fontSize: 13,
