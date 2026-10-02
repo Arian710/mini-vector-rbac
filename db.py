@@ -45,7 +45,7 @@ class MiniVectorDB:
         self._embedder = embedder or HashingEmbedder()
         self._entries = []  # jeder Eintrag: {"id", "text", "vector", "allowed_roles", "tenant_id"}
 
-    def add(self, ticket_id, text: str, allowed_roles: list, tenant_id: str) -> None:
+    def add(self, ticket_id, text: str, allowed_roles: list, tenant_id: str, customer_label: str = None) -> None:
         """
         Fuegt ein Dokument zur Datenbank hinzu.
 
@@ -53,7 +53,9 @@ class MiniVectorDB:
         in einen Vektor uebersetzt und zusammen mit den erlaubten Rollen und dem
         Mandanten (tenant_id) gespeichert. allowed_roles=["all"] bedeutet: jede
         Rolle INNERHALB DESSELBEN TENANTS darf dieses Dokument sehen - niemals
-        tenant-uebergreifend.
+        tenant-uebergreifend. customer_label ist reine Organisations-Metadaten
+        (z.B. "Kunde Mueller GmbH") - NIE eine Sicherheitsgrenze, das bleibt
+        allein tenant_id/allowed_roles vorbehalten.
         """
         vector = self._embedder.embed(text)
         self._entries.append({
@@ -62,9 +64,11 @@ class MiniVectorDB:
             "vector": vector,
             "allowed_roles": allowed_roles,
             "tenant_id": tenant_id,
+            "customer_label": customer_label,
         })
 
-    def load_entry(self, ticket_id, text: str, vector: np.ndarray, allowed_roles: list, tenant_id: str) -> None:
+    def load_entry(self, ticket_id, text: str, vector: np.ndarray, allowed_roles: list, tenant_id: str,
+                    customer_label: str = None) -> None:
         """
         Fuegt einen Eintrag mit BEREITS BERECHNETEM Vektor hinzu, z.B. beim
         Start aus der persistenten Datenbank geladen - ruft den Embedder NICHT
@@ -77,10 +81,22 @@ class MiniVectorDB:
             "vector": vector,
             "allowed_roles": allowed_roles,
             "tenant_id": tenant_id,
+            "customer_label": customer_label,
         })
 
     def __len__(self) -> int:
         return len(self._entries)
+
+    def embed(self, text: str) -> np.ndarray:
+        """Oeffentlicher Durchgriff auf den injizierten Embedder - fuer Code
+        ausserhalb von MiniVectorDB (z.B. role_suggestion.py), ohne dass dieser
+        Code den privaten Embedder selbst kennen oder konfigurieren muss."""
+        return self._embedder.embed(text)
+
+    def entries_for_tenant(self, tenant_id: str) -> list:
+        """Alle Eintraege eines Tenants, UNGEFILTERT nach Rolle - nur fuer interne
+        Server-Logik (z.B. role_suggestion.py), nie direkt ueber die API ausgeben."""
+        return [entry for entry in self._entries if entry["tenant_id"] == tenant_id]
 
     def _allowed_entries(self, role: str, tenant_id: str) -> list:
         """Tenant-Filter (haerteste Schranke) dann RBAC-Filter - siehe search()."""

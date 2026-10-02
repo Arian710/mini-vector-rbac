@@ -35,6 +35,29 @@ export async function search(token, query, topK = 5) {
   return parseOrThrow(response);
 }
 
+export async function suggestDocument(token, file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch(`${BASE_URL}/documents/suggest`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  return parseOrThrow(response);
+}
+
+export async function saveDocument(token, { text, allowedRole, customerLabel }) {
+  const response = await fetch(`${BASE_URL}/documents`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ text, allowed_role: allowedRole, customer_label: customerLabel || null }),
+  });
+  return parseOrThrow(response);
+}
+
 export async function graphData(token) {
   const response = await fetch(`${BASE_URL}/graph-data`, {
     headers: { Authorization: `Bearer ${token}` },

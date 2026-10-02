@@ -6,3 +6,6 @@ uvicorn[standard]
 pyjwt
 bcrypt
 httpx
+pypdf
+python-docx
+python-multipart

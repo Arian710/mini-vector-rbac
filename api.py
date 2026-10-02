@@ -26,16 +26,18 @@ try:
 except ImportError:
     pass
 
-from typing import List
+from typing import List, Optional
 
 import jwt
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 import auth
+import documents
+import role_suggestion
 import storage
 from db import MiniVectorDB
 from demo import DEMO_HTML
@@ -111,6 +113,23 @@ class GraphResponse(BaseModel):
     edges: List[GraphEdge]
 
 
+class SuggestResponse(BaseModel):
+    text: str
+    suggested_role: str
+    reasons: List[str]
+
+
+class SaveDocumentRequest(BaseModel):
+    text: str
+    allowed_role: str  # "all" oder "management" - vom Menschen bestaetigt/gewaehlt
+    customer_label: Optional[str] = None
+
+
+class SaveDocumentResponse(BaseModel):
+    id: int
+    allowed_role: str
+
+
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(_security)) -> dict:
     """Authentication: prueft das Token und liefert {username, role, tenant_id} daraus -
     niemals aus dem Request-Body."""
@@ -165,6 +184,54 @@ def search(request: SearchRequest, current_user: dict = Depends(get_current_user
 def graph_data(current_user: dict = Depends(get_current_user)):
     """Knoten+Kanten fuer die Graph-Ansicht - derselbe Tenant-/RBAC-Filter wie /search."""
     return db.graph_data(role=current_user["role"], tenant_id=current_user["tenant_id"])
+
+
+@app.post("/documents/suggest", response_model=SuggestResponse)
+def suggest_document(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_management),
+):
+    """
+    Schritt 1 des Selfservice-Uploads: extrahiert Text aus PDF/DOCX/TXT und
+    liefert einen Rollenvorschlag - speichert NICHTS. Erst /documents (Schritt 2)
+    schreibt tatsaechlich, nachdem ein Mensch die Rolle bestaetigt/geaendert hat.
+    """
+    try:
+        raw = file.file.read()
+        text = documents.extract_text(file.filename, raw)
+    except documents.UnsupportedFileType as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    vector = db.embed(text)
+    tenant_entries = db.entries_for_tenant(current_user["tenant_id"])
+    suggestion = role_suggestion.suggest_role(text, vector, tenant_entries)
+
+    return SuggestResponse(text=text, **suggestion)
+
+
+@app.post("/documents", response_model=SaveDocumentResponse)
+def save_document(
+    request: SaveDocumentRequest,
+    current_user: dict = Depends(require_management),
+):
+    """Schritt 2: speichert das Dokument mit der vom Menschen bestaetigten Rolle -
+    persistent (storage.py) UND sofort im laufenden Suchindex (db.add()), ohne
+    Server-Neustart. tenant_id kommt aus dem JWT, niemals vom Client."""
+    if request.allowed_role not in ("all", "management"):
+        raise HTTPException(status_code=422, detail="allowed_role muss 'all' oder 'management' sein")
+
+    new_id = storage.next_ticket_id()
+    vector = db.embed(request.text)
+    allowed_roles = [request.allowed_role]
+    tenant_id = current_user["tenant_id"]
+
+    storage.save_ticket(new_id, request.text, vector, allowed_roles, tenant_id, request.customer_label)
+    # load_entry statt add(): der Vektor wurde oben schon berechnet (fuer die
+    # Speicherung) - load_entry nutzt ihn direkt, statt beim Azure-Embedder ein
+    # zweites Mal (und ein zweites Mal kostenpflichtig) nachzufragen.
+    db.load_entry(new_id, request.text, vector, allowed_roles, tenant_id, request.customer_label)
+
+    return SaveDocumentResponse(id=new_id, allowed_role=request.allowed_role)
 
 
 @app.get("/audit-log", response_model=List[AuditLogEntry])

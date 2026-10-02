@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 function initials(username) {
@@ -8,6 +8,7 @@ function initials(username) {
 export default function Layout({ children }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   function handleLogout() {
     logout();
@@ -15,6 +16,10 @@ export default function Layout({ children }) {
   }
 
   const roleIsManagement = user?.role === "management";
+
+  function navStyle(path) {
+    return location.pathname === path ? styles.navItemActive : styles.navItem;
+  }
 
   return (
     <div style={styles.shell}>
@@ -24,9 +29,14 @@ export default function Layout({ children }) {
           <span style={styles.logoText}>RBAC</span>
         </div>
         <nav style={styles.nav}>
-          <div style={styles.navItemActive}>
+          <Link to="/" style={navStyle("/")}>
             <span>🔎</span> Dashboard
-          </div>
+          </Link>
+          {roleIsManagement && (
+            <Link to="/upload" style={navStyle("/upload")}>
+              <span>📤</span> Upload
+            </Link>
+          )}
         </nav>
       </aside>
 
@@ -83,6 +93,17 @@ const styles = {
   },
   logoText: { fontWeight: 600, fontSize: 15 },
   nav: { display: "flex", flexDirection: "column", gap: 4 },
+  navItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "10px 12px",
+    borderRadius: "var(--radius-sm)",
+    color: "var(--muted)",
+    fontSize: 14,
+    fontWeight: 500,
+    textDecoration: "none",
+  },
   navItemActive: {
     display: "flex",
     alignItems: "center",
@@ -93,6 +114,7 @@ const styles = {
     color: "var(--teal-deep)",
     fontSize: 14,
     fontWeight: 500,
+    textDecoration: "none",
   },
   main: { flex: 1, display: "flex", flexDirection: "column" },
   topbar: {

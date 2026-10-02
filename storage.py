@@ -46,6 +46,12 @@ def init_db(path: str = None) -> None:
                 tenant_id TEXT NOT NULL
             )
         """)
+        # Migration fuer Datenbanken, die vor dem Upload-Feature angelegt wurden -
+        # ALTER TABLE ADD COLUMN kennt kein "IF NOT EXISTS", daher der try/except.
+        try:
+            conn.execute("ALTER TABLE tickets ADD COLUMN customer_label TEXT")
+        except sqlite3.OperationalError:
+            pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 username TEXT PRIMARY KEY,
@@ -67,18 +73,28 @@ def init_db(path: str = None) -> None:
 
 
 def save_ticket(ticket_id, text: str, vector: np.ndarray, allowed_roles: list,
-                 tenant_id: str, path: str = None) -> None:
+                 tenant_id: str, customer_label: str = None, path: str = None) -> None:
     with _connect(path) as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO tickets (id, text, vector, allowed_roles, tenant_id) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (ticket_id, text, json.dumps(vector.tolist()), json.dumps(allowed_roles), tenant_id),
+            "INSERT OR REPLACE INTO tickets (id, text, vector, allowed_roles, tenant_id, customer_label) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (ticket_id, text, json.dumps(vector.tolist()), json.dumps(allowed_roles), tenant_id, customer_label),
         )
+
+
+def next_ticket_id(path: str = None) -> int:
+    """Naechste freie ID - Tickets/Dokumente teilen sich einen globalen ID-Raum,
+    tenant-uebergreifend (siehe data.py: IDs 1-22 sind bereits vergeben)."""
+    with _connect(path) as conn:
+        row = conn.execute("SELECT MAX(id) FROM tickets").fetchone()
+    return (row[0] or 0) + 1
 
 
 def load_tickets(path: str = None) -> list:
     with _connect(path) as conn:
-        rows = conn.execute("SELECT id, text, vector, allowed_roles, tenant_id FROM tickets").fetchall()
+        rows = conn.execute(
+            "SELECT id, text, vector, allowed_roles, tenant_id, customer_label FROM tickets"
+        ).fetchall()
     return [
         {
             "id": row[0],
@@ -86,6 +102,7 @@ def load_tickets(path: str = None) -> list:
             "vector": np.array(json.loads(row[2])),
             "allowed_roles": json.loads(row[3]),
             "tenant_id": row[4],
+            "customer_label": row[5],
         }
         for row in rows
     ]
