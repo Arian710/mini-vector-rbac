@@ -37,6 +37,11 @@ export default function Layout({ children }) {
               <span>📤</span> Upload
             </Link>
           )}
+          {roleIsManagement && (
+            <Link to="/roles" style={navStyle("/roles")}>
+              <span>🏷️</span> Rollen
+            </Link>
+          )}
         </nav>
       </aside>
 

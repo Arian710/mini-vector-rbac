@@ -3,6 +3,7 @@ import { useAuth } from "./context/AuthContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Upload from "./pages/Upload";
+import Roles from "./pages/Roles";
 
 function ProtectedRoute({ children }) {
   const { token } = useAuth();
@@ -26,6 +27,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <Upload />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/roles"
+        element={
+          <ProtectedRoute>
+            <Roles />
           </ProtectedRoute>
         }
       />

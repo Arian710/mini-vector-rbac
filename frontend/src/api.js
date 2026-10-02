@@ -72,6 +72,39 @@ export async function graphData(token) {
   return parseOrThrow(response);
 }
 
+export async function listRoles(token) {
+  const response = await fetch(`${BASE_URL}/roles`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseOrThrow(response);
+}
+
+export async function createRole(token, { name, description }) {
+  const response = await fetch(`${BASE_URL}/roles`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ name, description: description || null }),
+  });
+  return parseOrThrow(response);
+}
+
+export async function updateRole(token, roleId, { name, description }) {
+  const response = await fetch(`${BASE_URL}/roles/${roleId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ name: name ?? null, description: description ?? null }),
+  });
+  return parseOrThrow(response);
+}
+
+export async function deleteRole(token, roleId) {
+  const response = await fetch(`${BASE_URL}/roles/${roleId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseOrThrow(response);
+}
+
 /**
  * Liest username/role/tenant_id aus dem JWT-Payload fuer die Anzeige
  * (z.B. "Rolle: management" in der Sidebar). KEINE Signaturpruefung -

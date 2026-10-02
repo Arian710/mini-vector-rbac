@@ -1,14 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useSessionExpiry } from "../hooks/useSessionExpiry";
-import { suggestDocument, saveDocument } from "../api";
+import { suggestDocument, saveDocument, listRoles } from "../api";
 import Layout from "../components/Layout";
-
-const ROLE_LABELS = { all: "Alle Rollen", management: "Nur Management" };
 
 export default function Upload() {
   const { token } = useAuth();
   const handleSessionExpiry = useSessionExpiry();
+  const [roles, setRoles] = useState([]);
   const [file, setFile] = useState(null);
   const [customerLabel, setCustomerLabel] = useState("");
   const [suggestion, setSuggestion] = useState(null); // {text, suggested_role, reasons, chunk_count}
@@ -16,6 +15,15 @@ export default function Upload() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [saveResult, setSaveResult] = useState(null); // {ids, chunk_count}
+
+  useEffect(() => {
+    listRoles(token)
+      .then(setRoles)
+      .catch((err) => {
+        if (!handleSessionExpiry(err)) setError(err.message);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleAnalyze(event) {
     event.preventDefault();
@@ -93,8 +101,8 @@ export default function Upload() {
         {saveResult && (
           <div style={styles.success}>
             {saveResult.chunk_count > 1
-              ? `Dokument in ${saveResult.chunk_count} Abschnitte gespeichert und sofort durchsuchbar (IDs ${saveResult.ids[0]}–${saveResult.ids[saveResult.ids.length - 1]}, Rolle: ${ROLE_LABELS[saveResult.allowed_role]}).`
-              : `Dokument #${saveResult.ids[0]} gespeichert und sofort durchsuchbar (Rolle: ${ROLE_LABELS[saveResult.allowed_role]}).`}
+              ? `Dokument in ${saveResult.chunk_count} Abschnitte gespeichert und sofort durchsuchbar (IDs ${saveResult.ids[0]}–${saveResult.ids[saveResult.ids.length - 1]}, Rolle: ${saveResult.allowed_role}).`
+              : `Dokument #${saveResult.ids[0]} gespeichert und sofort durchsuchbar (Rolle: ${saveResult.allowed_role}).`}
           </div>
         )}
 
@@ -123,11 +131,11 @@ export default function Upload() {
                 <span
                   style={{
                     ...styles.pill,
-                    background: suggestion.suggested_role === "management" ? "var(--mgmt-pale)" : "var(--support-pale)",
-                    color: suggestion.suggested_role === "management" ? "var(--mgmt)" : "var(--support)",
+                    background: suggestion.suggested_role === "all" ? "var(--support-pale)" : "var(--mgmt-pale)",
+                    color: suggestion.suggested_role === "all" ? "var(--support)" : "var(--mgmt)",
                   }}
                 >
-                  {ROLE_LABELS[suggestion.suggested_role]}
+                  {suggestion.suggested_role}
                 </span>
               </div>
               <ul style={styles.reasons}>
@@ -139,22 +147,17 @@ export default function Upload() {
 
             <label style={styles.label}>
               Rolle (vor dem Speichern pruefen/aendern)
-              <div style={styles.toggle}>
-                <button
-                  type="button"
-                  onClick={() => setChosenRole("all")}
-                  style={chosenRole === "all" ? styles.toggleBtnActive : styles.toggleBtn}
-                >
-                  Alle Rollen
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setChosenRole("management")}
-                  style={chosenRole === "management" ? styles.toggleBtnActive : styles.toggleBtn}
-                >
-                  Nur Management
-                </button>
-              </div>
+              <select
+                value={chosenRole}
+                onChange={(e) => setChosenRole(e.target.value)}
+                style={styles.textInput}
+              >
+                {roles.map((role) => (
+                  <option key={role.id} value={role.name}>
+                    {role.name}
+                  </option>
+                ))}
+              </select>
             </label>
 
             <button type="button" onClick={handleSave} style={styles.button} disabled={loading}>
@@ -222,32 +225,6 @@ const styles = {
     borderRadius: 999,
   },
   reasons: { margin: 0, paddingLeft: 18, fontSize: 12, color: "var(--muted)" },
-  toggle: {
-    display: "flex",
-    background: "var(--bg)",
-    border: "1px solid var(--rule)",
-    borderRadius: "var(--radius-sm)",
-    padding: 3,
-    width: "fit-content",
-  },
-  toggleBtn: {
-    border: "none",
-    background: "transparent",
-    padding: "8px 14px",
-    borderRadius: 8,
-    fontSize: 13,
-    color: "var(--muted)",
-  },
-  toggleBtnActive: {
-    border: "none",
-    background: "var(--card-bg)",
-    boxShadow: "var(--shadow)",
-    padding: "8px 14px",
-    borderRadius: 8,
-    fontSize: 13,
-    color: "var(--ink)",
-    fontWeight: 600,
-  },
   error: {
     background: "var(--mgmt-pale)",
     color: "var(--mgmt)",

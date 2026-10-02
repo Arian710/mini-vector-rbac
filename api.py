@@ -142,6 +142,23 @@ class SaveDocumentResponse(BaseModel):
     allowed_role: str
 
 
+class RoleOut(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    is_system: bool
+
+
+class CreateRoleRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class UpdateRoleRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(_security)) -> dict:
     """Authentication: prueft das Token und liefert {username, role, tenant_id} daraus -
     niemals aus dem Request-Body."""
@@ -243,7 +260,8 @@ def suggest_document(
     # eingebettet, hier geht es nur um eine schnelle Vorschau.
     vector = _safe_embed(chunks[0])
     tenant_entries = db.entries_for_tenant(current_user["tenant_id"])
-    suggestion = role_suggestion.suggest_role(text, vector, tenant_entries)
+    tenant_roles = storage.list_roles(current_user["tenant_id"])
+    suggestion = role_suggestion.suggest_role(text, vector, tenant_entries, tenant_roles)
 
     return SuggestResponse(text=text, chunk_count=len(chunks), ocr_used=ocr_used, **suggestion)
 
@@ -256,11 +274,16 @@ def save_document(
     """Schritt 2: speichert das Dokument mit der vom Menschen bestaetigten Rolle -
     persistent (storage.py) UND sofort im laufenden Suchindex (db.add()), ohne
     Server-Neustart. tenant_id kommt aus dem JWT, niemals vom Client."""
-    if request.allowed_role not in ("all", "management"):
-        raise HTTPException(status_code=422, detail="allowed_role muss 'all' oder 'management' sein")
+    tenant_id = current_user["tenant_id"]
+    valid_role_names = {r["name"] for r in storage.list_roles(tenant_id)}
+    if request.allowed_role not in valid_role_names:
+        raise HTTPException(
+            status_code=422,
+            detail=f"allowed_role '{request.allowed_role}' ist keine Rolle dieses Tenants "
+                    f"(gueltig: {', '.join(sorted(valid_role_names))}).",
+        )
 
     allowed_roles = [request.allowed_role]
-    tenant_id = current_user["tenant_id"]
 
     chunks = documents.chunk_text(request.text)
     chunk_total = len(chunks) if len(chunks) > 1 else None  # None = kein Chunking noetig/erfolgt
@@ -281,6 +304,69 @@ def save_document(
         ids.append(new_id)
 
     return SaveDocumentResponse(ids=ids, chunk_count=len(chunks), allowed_role=request.allowed_role)
+
+
+def _role_anchor_vector(name: str, description: str):
+    """Embedding-Anker einer Rolle aus Name+Beschreibung - loest das Kaltstart-
+    Problem im Rollenvorschlag (siehe role_suggestion.py): eine neue Rolle hat
+    sofort einen Vergleichswert, auch ohne ein einziges zugewiesenes Dokument."""
+    if not description:
+        return None
+    return _safe_embed(f"{name}: {description}")
+
+
+@app.get("/roles", response_model=List[RoleOut])
+def list_roles(current_user: dict = Depends(require_management)):
+    return storage.list_roles(current_user["tenant_id"])
+
+
+@app.post("/roles", response_model=RoleOut)
+def create_role(request: CreateRoleRequest, current_user: dict = Depends(require_management)):
+    tenant_id = current_user["tenant_id"]
+    vector = _role_anchor_vector(request.name, request.description)
+    try:
+        role_id = storage.create_role(tenant_id, request.name, request.description, vector)
+    except storage.DuplicateRoleName as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return RoleOut(id=role_id, name=request.name, description=request.description, is_system=False)
+
+
+@app.patch("/roles/{role_id}", response_model=RoleOut)
+def update_role(role_id: int, request: UpdateRoleRequest, current_user: dict = Depends(require_management)):
+    tenant_id = current_user["tenant_id"]
+    vector = None
+    if request.description is not None:
+        name_for_anchor = request.name or next(
+            (r["name"] for r in storage.list_roles(tenant_id) if r["id"] == role_id), None
+        )
+        vector = _role_anchor_vector(name_for_anchor, request.description)
+
+    try:
+        storage.update_role(role_id, tenant_id, name=request.name, description=request.description, vector=vector)
+    except storage.DuplicateRoleName as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    updated = next((r for r in storage.list_roles(tenant_id) if r["id"] == role_id), None)
+    return RoleOut(id=updated["id"], name=updated["name"], description=updated["description"],
+                    is_system=updated["is_system"])
+
+
+@app.delete("/roles/{role_id}")
+def delete_role(role_id: int, current_user: dict = Depends(require_management)):
+    tenant_id = current_user["tenant_id"]
+    try:
+        storage.delete_role(role_id, tenant_id)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except storage.RoleInUse as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return {"deleted": role_id}
 
 
 @app.get("/audit-log", response_model=List[AuditLogEntry])
