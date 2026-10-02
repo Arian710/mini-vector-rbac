@@ -66,7 +66,10 @@ sobald eine erste Grundversion steht — Zeitpunkt entscheiden wir dann zusammen
 | 5.3 | TXT wird korrekt extrahiert | 👤 Browser | ☐ offen |
 | 5.4 | Nicht unterstützter Dateityp (z.B. .xlsx, .jpg) zeigt klare Fehlermeldung | 👤 Browser | ☐ offen |
 | 5.5 | Leere/inhaltslose Datei (0 Byte oder nur Whitespace) zeigt klare Fehlermeldung statt Crash | 👤 Browser | ☐ offen |
-| 5.6 | Gescanntes/bild-only PDF ohne Text-Ebene → aktuell erwartbarer Fehler ("kein Text extrahiert") bis OCR-Feature kommt | 👤 Browser | ☐ offen |
+| 5.6 | Gescanntes/bild-only PDF ohne Text-Ebene wird per Azure Document Intelligence (OCR) korrekt gelesen (`ocr_used: true`) | 🤖 curl mit generiertem Bild-PDF verifiziert | ✅ geprüft |
+| 5.6b | Normale PDFs mit Text-Ebene überspringen OCR (`ocr_used: false`), keine unnötige Latenz | 🤖 curl verifiziert | ✅ geprüft |
+| 5.6c | OCR schlägt fehl/ist nicht konfiguriert → sauberer Fallback auf die (ggf. leere) pypdf-Extraktion statt Absturz | 🤖 zu ergänzen (z.B. `.env`-Key temporär entfernen) | ☐ offen |
+| 5.6d | Schlecht lesbarer/schräger Scan: OCR-Ergebnis stichprobenartig auf Qualität prüfen | 👤 Browser (eigenes echtes Expose-Scan testen) | ☐ offen |
 | 5.7 | Sehr langes Dokument (>8191 Tokens) wird automatisch in mehrere Abschnitte (Chunks) zerlegt statt zu scheitern | 🤖 curl mit echtem eBook verifiziert | ✅ geprüft |
 | 5.8 | Jeder Chunk ist einzeln durchsuchbar mit korrekter Quellenangabe (Dateiname + Abschnitt X/Y) | 🤖 curl verifiziert | ✅ geprüft |
 | 5.9 | Dokument landet sofort im Suchindex, ohne Server-Neustart | 🤖 curl verifiziert | ✅ geprüft |
