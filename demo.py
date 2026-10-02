@@ -121,7 +121,10 @@ async function runSearch() {
   }
 }
 
-window.onload = runSearch;
+window.onload = function() {
+  document.getElementById("results-anna").innerHTML = '<div class="empty">Noch keine Suche gestartet &ndash; klicke auf "Suchen"</div>';
+  document.getElementById("results-bernd").innerHTML = '<div class="empty">Noch keine Suche gestartet &ndash; klicke auf "Suchen"</div>';
+};
 </script>
 </body>
 </html>
