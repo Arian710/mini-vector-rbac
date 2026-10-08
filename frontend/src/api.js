@@ -1,4 +1,5 @@
-const BASE_URL = "http://127.0.0.1:8000";
+// Per frontend/.env (VITE_API_URL=...) ueberschreibbar, z.B. fuer ein Azure-Deployment.
+const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 async function parseOrThrow(response) {
   if (!response.ok) {
@@ -100,6 +101,13 @@ export async function updateRole(token, roleId, { name, description }) {
 export async function deleteRole(token, roleId) {
   const response = await fetch(`${BASE_URL}/roles/${roleId}`, {
     method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseOrThrow(response);
+}
+
+export async function auditLog(token) {
+  const response = await fetch(`${BASE_URL}/audit-log`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   return parseOrThrow(response);

@@ -5,165 +5,219 @@ import "vis-network/styles/vis-network.css";
 import { useAuth } from "../context/AuthContext";
 import { useSessionExpiry } from "../hooks/useSessionExpiry";
 import { graphData as fetchGraphData } from "../api";
+import Icon from "./Icon";
 
-function truncate(text, max = 30) {
+function truncate(text, max = 28) {
   return text.length > max ? text.slice(0, max) + "…" : text;
+}
+
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+/** Zaehlt Theme-Wechsel, damit der Graph mit den neuen Farben neu aufgebaut wird. */
+function useThemeTick() {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const observer = new MutationObserver(() => setTick((t) => t + 1));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
+  return tick;
 }
 
 /**
  * Obsidian-artige Netzwerk-Ansicht: jedes Dokument ein Knoten, eine Kante
  * zu seinen aehnlichsten Nachbarn (siehe db.py graph_data - serverseitig
- * bereits auf Top-5-Nachbarn und RBAC/Tenant begrenzt). Physik-Simulation
- * sortiert die Knoten selbst zu Clustern, genau wie bei Obsidian's Graph View.
+ * bereits auf Top-5-Nachbarn und RBAC/Tenant begrenzt). Klick auf einen
+ * Knoten zeigt Details im Seitenpanel und hebt Nachbarn hervor.
  */
 export default function GraphView() {
   const { token } = useAuth();
   const handleSessionExpiry = useSessionExpiry();
+  const themeTick = useThemeTick();
   const containerRef = useRef(null);
   const networkRef = useRef(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-  const [nodeCount, setNodeCount] = useState(0);
+  const [selected, setSelected] = useState(null); // {node, neighbors}
 
   useEffect(() => {
     let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await fetchGraphData(token);
-        if (cancelled) return;
-        setNodeCount(data.nodes.length);
-
-        const nodes = new DataSet(
-          data.nodes.map((n) => {
-            const extras = [
-              n.customer_label && `Kunde: ${n.customer_label}`,
-              n.source_document && `Quelle: ${n.source_document}`,
-            ].filter(Boolean);
-            return {
-              id: n.id,
-              label: truncate(n.text),
-              title: extras.length ? `${n.text}\n\n${extras.join("\n")}` : n.text,
-              color: n.restricted
-                ? { background: "#b4551f", border: "#8a3f14", highlight: { background: "#8a3f14", border: "#8a3f14" } }
-                : { background: "#0f6e56", border: "#0a4536", highlight: { background: "#0a4536", border: "#0a4536" } },
-            };
-          })
-        );
-        const edges = new DataSet(
-          data.edges.map((e, i) => ({
-            id: i,
-            from: e.source,
-            to: e.target,
-            value: e.weight,
-            title: `Aehnlichkeit: ${e.weight}`,
-          }))
-        );
-
-        const options = {
-          nodes: {
-            shape: "dot",
-            size: 9,
-            color: {
-              background: "#0f6e56",
-              border: "#0a4536",
-              highlight: { background: "#0a4536", border: "#0a4536" },
-            },
-            font: { color: "#1c1c1a", size: 12, face: "-apple-system, Segoe UI, sans-serif" },
-            borderWidth: 2,
-          },
-          edges: {
-            color: { color: "#dad7cc", highlight: "#0f6e56", opacity: 0.6 },
-            smooth: { type: "continuous" },
-            scaling: { min: 1, max: 6 },
-          },
-          physics: {
-            barnesHut: { gravitationalConstant: -4000, springLength: 120, springConstant: 0.04 },
-            stabilization: { iterations: 150 },
-          },
-          interaction: { hover: true, tooltipDelay: 100 },
-        };
-
-        if (networkRef.current) {
-          networkRef.current.destroy();
-        }
-        const network = new Network(containerRef.current, { nodes, edges }, options);
-        networkRef.current = network;
-
-        // Klick auf einen Knoten hebt ihn + direkt verbundene Nachbarn hervor -
-        // macht Cluster-Zugehoerigkeit greifbar, genau wie bei Obsidian.
-        network.on("click", (params) => {
-          if (params.nodes.length === 0) {
-            network.unselectAll();
-            return;
-          }
-          const clicked = params.nodes[0];
-          const connected = network.getConnectedNodes(clicked);
-          network.selectNodes([clicked, ...connected]);
-        });
-      } catch (err) {
+    fetchGraphData(token)
+      .then((d) => !cancelled && setData(d))
+      .catch((err) => {
         if (!cancelled && !handleSessionExpiry(err)) setError(err.message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    load();
-
+      });
     return () => {
       cancelled = true;
-      if (networkRef.current) {
-        networkRef.current.destroy();
-        networkRef.current = null;
-      }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  useEffect(() => {
+    if (!data || !containerRef.current) return;
+
+    const allColor = cssVar("--teal");
+    const restrictedColor = cssVar("--mgmt");
+    const edgeColor = cssVar("--rule");
+    const textColor = cssVar("--ink");
+    const cardBg = cssVar("--card-bg");
+    const byId = new Map(data.nodes.map((n) => [n.id, n]));
+
+    const nodeColor = (c) => ({
+      background: c,
+      border: cardBg,
+      highlight: { background: c, border: textColor },
+      hover: { background: c, border: textColor },
+    });
+
+    const nodes = new DataSet(
+      data.nodes.map((n) => ({
+        id: n.id,
+        label: truncate(n.text),
+        color: nodeColor(n.restricted ? restrictedColor : allColor),
+      }))
+    );
+    const edges = new DataSet(
+      data.edges.map((e, i) => ({
+        id: i,
+        from: e.source,
+        to: e.target,
+        value: e.weight,
+        title: `Ähnlichkeit: ${e.weight}`,
+      }))
+    );
+
+    const network = new Network(
+      containerRef.current,
+      { nodes, edges },
+      {
+        nodes: {
+          shape: "dot",
+          size: 11,
+          borderWidth: 2,
+          font: { color: textColor, size: 12, face: "-apple-system, Segoe UI, sans-serif" },
+        },
+        edges: {
+          color: { color: edgeColor, highlight: allColor, hover: allColor, opacity: 0.9 },
+          smooth: { type: "continuous" },
+          scaling: { min: 1, max: 5 },
+        },
+        physics: {
+          barnesHut: { gravitationalConstant: -4000, springLength: 120, springConstant: 0.04 },
+          stabilization: { iterations: 150 },
+        },
+        interaction: { hover: true, tooltipDelay: 150, zoomView: true },
+      }
+    );
+    networkRef.current = network;
+
+    network.on("click", (params) => {
+      if (params.nodes.length === 0) {
+        network.unselectAll();
+        setSelected(null);
+        return;
+      }
+      const clicked = params.nodes[0];
+      const connected = network.getConnectedNodes(clicked);
+      network.selectNodes([clicked, ...connected]);
+      setSelected({
+        node: byId.get(clicked),
+        neighbors: connected.map((id) => byId.get(id)).filter(Boolean),
+      });
+    });
+
+    return () => {
+      network.destroy();
+      networkRef.current = null;
+    };
+  }, [data, themeTick]);
+
+  function zoom(factor) {
+    const net = networkRef.current;
+    if (net) net.moveTo({ scale: net.getScale() * factor, animation: { duration: 200 } });
+  }
+
+  if (error)
+    return (
+      <div className="alert alert-error" role="alert">
+        <Icon name="alert" size={16} /> {error}
+      </div>
+    );
+
+  if (!data) return <div className="skeleton" style={{ height: 420 }} aria-busy="true" aria-label="Graph wird geladen" />;
+
+  if (data.nodes.length === 0)
+    return (
+      <div className="empty">
+        <span className="empty-icon">
+          <Icon name="graph" size={22} />
+        </span>
+        <strong>Noch keine Dokumente</strong>
+        <span>Sobald Dokumente hochgeladen sind, erscheinen sie hier als vernetzte Knoten.</span>
+      </div>
+    );
+
   return (
-    <div style={styles.wrapper}>
-      {loading && <div style={styles.status}>Graph wird geladen...</div>}
-      {error && <div style={styles.error}>{error}</div>}
-      {!loading && !error && (
-        <div style={styles.metaRow}>
-          <div style={styles.meta}>
-            {nodeCount} Dokumente &mdash; Klick auf einen Knoten hebt verbundene Dokumente hervor, Scrollen zoomt.
+    <div className="stack-sm">
+      <div className="row-wrap" style={{ justifyContent: "space-between" }}>
+        <span className="card-sub">
+          {data.nodes.length} Dokumente · Klick auf einen Knoten zeigt Details, Scrollen zoomt.
+        </span>
+        <span className="row-wrap">
+          <span className="pill pill-all">● Alle Rollen</span>
+          <span className="pill pill-restricted">● Nur Management</span>
+        </span>
+      </div>
+
+      <div className="graph-layout">
+        <div className="graph-canvas-wrap">
+          <div className="graph-tools">
+            <button className="btn-icon" onClick={() => zoom(1.3)} aria-label="Vergrößern">
+              <Icon name="zoomIn" />
+            </button>
+            <button className="btn-icon" onClick={() => zoom(1 / 1.3)} aria-label="Verkleinern">
+              <Icon name="zoomOut" />
+            </button>
+            <button
+              className="btn-icon"
+              onClick={() => networkRef.current?.fit({ animation: { duration: 250 } })}
+              aria-label="Alles einpassen"
+            >
+              <Icon name="maximize" />
+            </button>
           </div>
-          <div style={styles.legend}>
-            <span style={styles.legendItem}>
-              <span style={{ ...styles.dot, background: "#0f6e56" }} /> Alle Rollen
-            </span>
-            <span style={styles.legendItem}>
-              <span style={{ ...styles.dot, background: "#b4551f" }} /> Nur Management
-            </span>
-          </div>
+          <div ref={containerRef} className="graph-canvas" role="img" aria-label="Netzwerk der Dokumente" />
         </div>
-      )}
-      <div ref={containerRef} style={styles.canvas} />
+
+        <aside className="card graph-side stack-sm" aria-live="polite">
+          {selected ? (
+            <>
+              <div className="row-wrap">
+                <span className={`pill ${selected.node.restricted ? "pill-restricted" : "pill-all"}`}>
+                  {selected.node.restricted ? "Nur Management" : "Alle Rollen"}
+                </span>
+                {selected.node.customer_label && <span className="pill pill-neutral">{selected.node.customer_label}</span>}
+              </div>
+              <p style={{ fontSize: 14, overflowWrap: "anywhere" }}>{selected.node.text}</p>
+              {selected.node.source_document && (
+                <span className="card-sub row" style={{ gap: 6 }}>
+                  <Icon name="file" size={14} /> {selected.node.source_document}
+                </span>
+              )}
+              <div className="card-sub" style={{ paddingTop: 8, borderTop: "1px solid var(--rule)" }}>
+                {selected.neighbors.length} ähnliche Dokumente verbunden
+              </div>
+            </>
+          ) : (
+            <>
+              <strong className="card-title">Details</strong>
+              <span className="card-sub">Wähle einen Knoten, um Text, Quelle und Berechtigung zu sehen.</span>
+            </>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }
-
-const styles = {
-  wrapper: { display: "flex", flexDirection: "column", gap: 10 },
-  canvas: {
-    height: 520,
-    border: "1px solid var(--rule)",
-    borderRadius: "var(--radius)",
-    background: "var(--card-bg)",
-  },
-  status: { color: "var(--muted)", fontSize: 13 },
-  metaRow: { display: "flex", justifyContent: "space-between", alignItems: "center" },
-  meta: { color: "var(--muted)", fontSize: 12 },
-  legend: { display: "flex", gap: 14 },
-  legendItem: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" },
-  dot: { width: 9, height: 9, borderRadius: "50%", display: "inline-block" },
-  error: {
-    background: "var(--mgmt-pale)",
-    color: "var(--mgmt)",
-    padding: "10px 14px",
-    borderRadius: "var(--radius-sm)",
-    fontSize: 13,
-  },
-};

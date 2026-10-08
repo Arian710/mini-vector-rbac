@@ -1,6 +1,6 @@
 # Projektstand: Mini-Vektordatenbank mit RBAC
 
-Stand: 2026-10-08
+Stand: 2026-10-08 (UI/UX-Überarbeitung)
 
 ## Was fertig ist
 
@@ -14,6 +14,7 @@ Stand: 2026-10-08
 **Dashboard (React/Vite)**
 - Login, Sidebar/Layout, Suche, Obsidian-artige Graph-Ansicht, Dokumenten-Upload mit KI-Rollenvorschlag, Rollen-Verwaltung inkl. Branchenvorlagen
 - Session-Timeout leitet automatisch zum Login zurück
+- **UI/UX-Überarbeitung (2026-10-08):** Design-System in `index.css` (Tokens, Buttons, Karten, Formulare) statt Inline-Styles; Dark/Light/System-Theme; responsive mit Mobile-Drawer; SVG-Icons statt Emojis; neuer Login (Split-Layout, Passwort anzeigen, Demo-User per Klick); Suche mit Skeletons, Treffer-Highlighting, Score-Balken, Suchverlauf; Graph mit Detail-Panel, Zoom und Theme-Farben; Upload mit Drag-&-Drop und Stepper; Rollen mit Lösch-Bestätigung und Toasts; **neue Audit-Log-Seite** (nutzt bestehenden `/audit-log`-Endpoint) mit Kennzahlen und Filtern; 404-Seite; Management-Routen im Frontend abgesichert (echte Prüfung bleibt serverseitig). Visuell geprüft gegen einen Mock-Server (kein Azure-Zugang auf diesem Rechner), noch nicht gegen das echte Backend
 
 **Tests**
 - `test_rbac.py`, `test_auth.py`, `test_audit.py`, `test_tenancy.py`, `test_security.py` (neu: Passwort-Stärke, Rate-Limit) — laufen alle gegen echtes Azure-Postgres (Schema-basierte Testisolation statt Datei-basiert), bewusste Entscheidung für volle Test/Prod-Parität
@@ -28,7 +29,7 @@ Stand: 2026-10-08
 ## Was offen ist
 
 - **WhatsApp-Integration**: wartet auf Meta Business Verification (liegt bei Arian) — dafür muss zuerst die Gewerbe-Frage geklärt werden (bestehendes Gewerbe erweitern vs. neues Gewerbe vs. Freiberufler-Status nach §18 EStG; keine abschließende Rechtsberatung, Empfehlung: kurzer Anruf beim Gewerbeamt/Steuerberater)
-- Dashboard-Design verfeinern (aktuell funktional, noch nicht final poliert)
+- Neues UI einmal gegen das echte Backend durchklicken (Upload-Flow, Rollen löschen, Audit-Log); danach Feinschliff nach Feedback
 - Erste Kunden über die Zielgruppenliste ansprechen
 - User-Verwaltung (über reine Rollen-Verwaltung hinaus) — bewusst zurückgestellt, im Feature-Backlog
 - Migration auf einen Managed-Identity-Provider (z.B. Entra External ID) — bewusst zurückgestellt, im Feature-Backlog

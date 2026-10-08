@@ -1,164 +1,160 @@
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../hooks/useTheme";
+import Icon from "./Icon";
 
 function initials(username) {
-  return username.slice(0, 2).toUpperCase();
+  return (username || "?").slice(0, 2).toUpperCase();
 }
 
-export default function Layout({ children }) {
+const THEMES = [
+  { mode: "light", label: "Hell", icon: "sun" },
+  { mode: "dark", label: "Dunkel", icon: "moon" },
+  { mode: "system", label: "System", icon: "globe" },
+];
+
+export default function Layout({ title, children }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
+  const { mode, setMode } = useTheme();
+  const [navOpen, setNavOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  const isManagement = user?.role === "management";
+
+  useEffect(() => {
+    if (title) document.title = `${title} · Mini-Vector RBAC`;
+  }, [title]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e) => menuRef.current && !menuRef.current.contains(e.target) && setMenuOpen(false);
+    const onKey = (e) => e.key === "Escape" && setMenuOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
 
   function handleLogout() {
     logout();
     navigate("/login");
   }
 
-  const roleIsManagement = user?.role === "management";
-
-  function navStyle(path) {
-    return location.pathname === path ? styles.navItemActive : styles.navItem;
-  }
-
   return (
-    <div style={styles.shell}>
-      <aside style={styles.sidebar}>
-        <div style={styles.logo}>
-          <span style={styles.logoMark}>MV</span>
-          <span style={styles.logoText}>RBAC</span>
+    <div className="shell">
+      <aside className={`sidebar ${navOpen ? "open" : ""}`} aria-label="Hauptnavigation">
+        <div className="brand">
+          <span className="brand-mark">MV</span>
+          <div>
+            <div className="brand-name">Vector RBAC</div>
+            <div className="brand-sub">Wissensdatenbank</div>
+          </div>
         </div>
-        <nav style={styles.nav}>
-          <Link to="/" style={navStyle("/")}>
-            <span>🔎</span> Dashboard
-          </Link>
-          {roleIsManagement && (
-            <Link to="/upload" style={navStyle("/upload")}>
-              <span>📤</span> Upload
-            </Link>
+
+        <nav className="nav" onClick={() => setNavOpen(false)}>
+          <div className="nav-label">Arbeiten</div>
+          <NavLink to="/" end>
+            <Icon name="search" /> Suche
+          </NavLink>
+          {isManagement && (
+            <NavLink to="/upload">
+              <Icon name="upload" /> Upload
+            </NavLink>
           )}
-          {roleIsManagement && (
-            <Link to="/roles" style={navStyle("/roles")}>
-              <span>🏷️</span> Rollen
-            </Link>
+          {isManagement && (
+            <>
+              <div className="nav-label" style={{ paddingTop: 18 }}>
+                Verwalten
+              </div>
+              <NavLink to="/roles">
+                <Icon name="tag" /> Rollen
+              </NavLink>
+              <NavLink to="/audit">
+                <Icon name="shield" /> Audit-Log
+              </NavLink>
+            </>
           )}
         </nav>
-      </aside>
 
-      <div style={styles.main}>
-        <header style={styles.topbar}>
-          <div style={styles.tenant}>{user?.tenant_id}</div>
-          <div style={styles.userBlock}>
-            <span
-              style={{
-                ...styles.pill,
-                background: roleIsManagement ? "var(--mgmt-pale)" : "var(--support-pale)",
-                color: roleIsManagement ? "var(--mgmt)" : "var(--support)",
-              }}
+        <div className="sidebar-foot">
+          <span className="region-badge">
+            <Icon name="lock" size={13} /> Serverseitig erzwungenes RBAC
+          </span>
+          <span>Jeder sieht nur, wofür er berechtigt ist.</span>
+        </div>
+      </aside>
+      <div className={`scrim ${navOpen ? "open" : ""}`} onClick={() => setNavOpen(false)} />
+
+      <div className="main">
+        <header className="topbar">
+          <button
+            className="btn-icon menu-toggle"
+            onClick={() => setNavOpen((o) => !o)}
+            aria-label="Navigation öffnen"
+            aria-expanded={navOpen}
+          >
+            <Icon name="menu" size={20} />
+          </button>
+          <span className="tenant-chip" title="Dein Mandant">
+            <Icon name="building" size={14} /> {user?.tenant_id}
+          </span>
+          <span className="spacer" />
+
+          <div className="user-menu" ref={menuRef}>
+            <button
+              className="user-btn"
+              onClick={() => setMenuOpen((o) => !o)}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
             >
-              {user?.role}
-            </span>
-            <span style={styles.avatar}>{initials(user?.sub || "?")}</span>
-            <span style={styles.username}>{user?.sub}</span>
-            <button style={styles.logoutButton} onClick={handleLogout}>
-              Logout
+              <span className="avatar">{initials(user?.sub)}</span>
+              <span className="hide-mobile" style={{ fontSize: 14, fontWeight: 500 }}>
+                {user?.sub}
+              </span>
             </button>
+            {menuOpen && (
+              <div className="popover" role="menu">
+                <div className="popover-head">
+                  <strong style={{ fontSize: 14 }}>{user?.sub}</strong>
+                  <span className="row-wrap">
+                    <span className={`pill ${isManagement ? "pill-restricted" : "pill-all"}`}>{user?.role}</span>
+                    <span className="muted" style={{ fontSize: 12 }}>
+                      {user?.tenant_id}
+                    </span>
+                  </span>
+                </div>
+                <div className="nav-label" style={{ padding: "4px 10px" }}>
+                  Darstellung
+                </div>
+                {THEMES.map((t) => (
+                  <button
+                    key={t.mode}
+                    className="item"
+                    role="menuitemradio"
+                    aria-checked={mode === t.mode}
+                    onClick={() => setMode(t.mode)}
+                  >
+                    <Icon name={t.icon} size={16} />
+                    <span style={{ flex: 1 }}>{t.label}</span>
+                    {mode === t.mode && <Icon name="check" size={16} />}
+                  </button>
+                ))}
+                <div style={{ borderTop: "1px solid var(--rule)", margin: "6px 0" }} />
+                <button className="item" role="menuitem" onClick={handleLogout}>
+                  <Icon name="logout" size={16} /> Abmelden
+                </button>
+              </div>
+            )}
           </div>
         </header>
 
-        <main style={styles.content}>{children}</main>
+        <main className="content">{children}</main>
       </div>
     </div>
   );
 }
-
-const styles = {
-  shell: { display: "flex", minHeight: "100vh" },
-  sidebar: {
-    width: 220,
-    background: "var(--card-bg)",
-    borderRight: "1px solid var(--rule)",
-    padding: "24px 16px",
-    display: "flex",
-    flexDirection: "column",
-    gap: 28,
-  },
-  logo: { display: "flex", alignItems: "center", gap: 10, padding: "0 8px" },
-  logoMark: {
-    width: 32,
-    height: 32,
-    borderRadius: 9,
-    background: "var(--teal)",
-    color: "white",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 12,
-    fontWeight: 700,
-  },
-  logoText: { fontWeight: 600, fontSize: 15 },
-  nav: { display: "flex", flexDirection: "column", gap: 4 },
-  navItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    padding: "10px 12px",
-    borderRadius: "var(--radius-sm)",
-    color: "var(--muted)",
-    fontSize: 14,
-    fontWeight: 500,
-    textDecoration: "none",
-  },
-  navItemActive: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    padding: "10px 12px",
-    borderRadius: "var(--radius-sm)",
-    background: "var(--teal-pale)",
-    color: "var(--teal-deep)",
-    fontSize: 14,
-    fontWeight: 500,
-    textDecoration: "none",
-  },
-  main: { flex: 1, display: "flex", flexDirection: "column" },
-  topbar: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "16px 28px",
-    borderBottom: "1px solid var(--rule)",
-    background: "var(--card-bg)",
-  },
-  tenant: { fontSize: 13, color: "var(--muted)" },
-  userBlock: { display: "flex", alignItems: "center", gap: 10 },
-  pill: {
-    fontSize: 12,
-    fontWeight: 600,
-    padding: "4px 10px",
-    borderRadius: 999,
-    textTransform: "capitalize",
-  },
-  avatar: {
-    width: 28,
-    height: 28,
-    borderRadius: "50%",
-    background: "var(--teal-deep)",
-    color: "white",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 11,
-    fontWeight: 700,
-  },
-  username: { fontSize: 14 },
-  logoutButton: {
-    border: "1px solid var(--rule)",
-    background: "transparent",
-    borderRadius: "var(--radius-sm)",
-    padding: "6px 12px",
-    fontSize: 13,
-    color: "var(--ink)",
-  },
-  content: { flex: 1, padding: 28, display: "flex", flexDirection: "column", gap: 20 },
-};

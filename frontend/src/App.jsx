@@ -4,10 +4,15 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Upload from "./pages/Upload";
 import Roles from "./pages/Roles";
+import AuditLog from "./pages/AuditLog";
+import NotFound from "./pages/NotFound";
 
-function ProtectedRoute({ children }) {
-  const { token } = useAuth();
-  return token ? children : <Navigate to="/login" replace />;
+// Nur UI-Komfort: Die echte Autorisierung passiert bei jedem Request im Backend (require_management).
+function ProtectedRoute({ children, managementOnly = false }) {
+  const { token, user } = useAuth();
+  if (!token) return <Navigate to="/login" replace />;
+  if (managementOnly && user?.role !== "management") return <Navigate to="/" replace />;
+  return children;
 }
 
 export default function App() {
@@ -25,7 +30,7 @@ export default function App() {
       <Route
         path="/upload"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute managementOnly>
             <Upload />
           </ProtectedRoute>
         }
@@ -33,8 +38,24 @@ export default function App() {
       <Route
         path="/roles"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute managementOnly>
             <Roles />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/audit"
+        element={
+          <ProtectedRoute managementOnly>
+            <AuditLog />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="*"
+        element={
+          <ProtectedRoute>
+            <NotFound />
           </ProtectedRoute>
         }
       />
