@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useSessionExpiry } from "../hooks/useSessionExpiry";
 import { search as apiSearch } from "../api";
@@ -34,6 +34,7 @@ function saveRecent(user, query) {
 export default function Dashboard() {
   const { token, user } = useAuth();
   const handleSessionExpiry = useSessionExpiry();
+  const searchInputRef = useRef(null);
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState("");
   const [results, setResults] = useState(null);
@@ -41,6 +42,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [recent, setRecent] = useState(() => loadRecent(user));
+  const [showDefaults, setShowDefaults] = useState(false); // nach "x": wieder die Standard-Vorschlaege statt Verlauf
 
   async function runSearch(text) {
     const q = text.trim();
@@ -54,6 +56,7 @@ export default function Dashboard() {
       setResults(data);
       setSubmitted(q);
       setRecent(saveRecent(user, q));
+      setShowDefaults(false);
     } catch (err) {
       if (!handleSessionExpiry(err)) setError(err.message);
     } finally {
@@ -61,7 +64,17 @@ export default function Dashboard() {
     }
   }
 
-  const suggestions = recent.length > 0 ? recent : EXAMPLES;
+  function clearSearch() {
+    setQuery("");
+    setSubmitted("");
+    setResults(null);
+    setError(null);
+    setShowDefaults(true);
+    searchInputRef.current?.focus();
+  }
+
+  const useRecent = recent.length > 0 && !showDefaults;
+  const suggestions = useRecent ? recent : EXAMPLES;
 
   return (
     <Layout title="Suche">
@@ -84,6 +97,7 @@ export default function Dashboard() {
               <Icon name="search" size={19} />
             </span>
             <input
+              ref={searchInputRef}
               className="input"
               placeholder="Was suchst du? z.B. „Gehaltserhöhung Budget Quartal“"
               aria-label="Suchanfrage"
@@ -91,6 +105,11 @@ export default function Dashboard() {
               onChange={(e) => setQuery(e.target.value)}
               autoFocus
             />
+            {query && (
+              <button type="button" className="btn-icon search-clear" onClick={clearSearch} aria-label="Suche leeren">
+                <Icon name="x" size={16} />
+              </button>
+            )}
             <button type="submit" className="btn btn-primary" disabled={loading || !query.trim()}>
               {loading ? <span className="spinner" /> : null}
               {loading ? "Suche …" : "Suchen"}
@@ -99,7 +118,7 @@ export default function Dashboard() {
 
           <div className="row-wrap" style={{ justifyContent: "space-between" }}>
             <div className="suggest-row">
-              <span className="label">{recent.length > 0 ? "Zuletzt:" : "Probier:"}</span>
+              <span className="label">{useRecent ? "Zuletzt:" : "Probier:"}</span>
               {suggestions.map((s) => (
                 <button key={s} type="button" className="suggest-chip" onClick={() => runSearch(s)}>
                   {s}

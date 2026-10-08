@@ -825,6 +825,13 @@ a {
   position: absolute;
   right: 7px;
 }
+.search-box .search-clear {
+  position: absolute;
+  right: 112px;
+}
+.search-box .input {
+  padding-right: 150px;
+}
 .suggest-row {
   display: flex;
   flex-wrap: wrap;
